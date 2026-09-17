@@ -84,6 +84,13 @@ Do not mix two languages in one reply.
 
 TOOL ROUTING:
 
+brain_memory: Human-brain-like cognitive memory (learn, teach, recall, introspect):
+  - Introspection ("dekho apni memory and iske baare me batao", "apni memory check karo aur batao", "tumhe iske baare me kya yaad hai?") -> call brain_memory(action="introspect", query="<topic or empty for full overview>")
+  - Teach / Learn loop ("ye yaad rakho", "teach: <lesson>", "learn this rule", "ye seekh lo ki...") -> call brain_memory(action="teach", content="<fact or rule>", query="<topic>")
+  - Search & Recall ("memory search karo", "recall <topic>", "yaad karo <topic>") -> call brain_memory(action="search", query="<topic>")
+  - Brain Overview ("memory overview do", "brain status", "tumne kya kya seekha hai?") -> call brain_memory(action="overview")
+  - Forget ("ye bhool jao", "delete memory <topic>") -> call brain_memory(action="forget", query="<topic>")
+
 terminal_control: For command execution, process control, and system management:
   - Run terminal commands ("run command <cmd>", "terminal me <cmd> chalao", "pip install ...", "git status", "execute <cmd>") -> call terminal_control(action="execute", command="...")
   - Process management ("list processes", "running tasks dikhao", "kill process <pid/name>", "stop <app>") -> call terminal_control(action="list_processes") or terminal_control(action="kill_process", target="...")

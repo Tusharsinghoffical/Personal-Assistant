@@ -39,6 +39,7 @@ It's not just an assistant — it's an extension of your digital life.
 | 🔊 Precise Volume Control | Set exact system volume percentage (0–100%) or step up/down smoothly via voice in English/Hindi with full undo support |
 | 📸 Camera & Photo Capture | Capture webcam photos hands-free with instant HUD preview; stored in `Pictures/Mark_Captures` |
 | 🖥️ Screenshot & Viewer | High-fidelity screen capture and voice commands to open & view captured photos or screenshots in the default OS viewer |
+| 🧠 Human-Brain Cognitive Memory | Continuous Learn ➔ Teach ➔ Store ➔ Recall ➔ Introspect loop in JSON; self-reflective memory search and reinforcement |
 | 💻 Full Terminal Control | Autonomous shell command execution (PowerShell/CMD/Bash), process listing & killing, and system specs |
 | 👁️ Advanced Screen Analyzer | Real-time multimodal screen inspection, on-screen error/code debugging, and open window detection |
 | 🎬 Multimedia Video Creator | Real-time screen recording to MP4, timed video clips, and automated presentation video synthesis |
@@ -243,6 +244,7 @@ Mark/
 │   ├── _template.py          # Copy this to write a new plugin — one file, drop in, done
 │   └── ...                   # Drop-in skills (each self-describes via a PLUGIN dict + run())
 ├── actions/                  # Bundled skills — each self-describes via a TOOL dict + handler
+│   ├── brain_memory.py       # Human-brain cognitive memory (learn, teach, introspect, search)
 │   ├── terminal_control.py   # Full shell command execution & process management
 │   ├── screen_analyzer.py    # Real-time visual screen analysis & OCR
 │   ├── video_creator.py      # Real-time screen recording & video story synthesis
@@ -269,6 +271,8 @@ Mark/
 │   ├── dev_agent.py          # Developer task agent
 │   └── desktop.py            # Desktop and taskbar control
 ├── memory/
+│   ├── brain_engine.py       # Cognitive brain loop (reinforcement, fuzzy search & introspection)
+│   ├── brain_store.json      # Structured brain memory graph & continuous knowledge nodes
 │   ├── memory_manager.py     # Load/save long_term.json — sessions, monitors, identity
 │   ├── config_manager.py     # api_keys.json access — key, OS, name, voice, colour, toggles
 │   └── long_term.json        # Persistent store: identity, preferences, projects, sessions, monitors

@@ -368,13 +368,30 @@ def search_memory(query: str, limit: int = 8) -> str:
                 rows.append((s, cat, key, val))
 
     if not rows:
+        head = (f"Stored facts matching '{query}':" if query
+                else "Everything currently stored:")
+        lines = []
+    else:
+        rows.sort(key=lambda r: (-r[0], r[2]))
+        lines = [f"{cat}/{_pretty(key)}: {val}" for _s, cat, key, val in rows[:max(1, limit)]]
+        head  = (f"Stored facts matching '{query}':" if query
+                 else "Everything currently stored:")
+
+    # Also query the cognitive brain store
+    try:
+        from memory.brain_engine import search as brain_search
+        b_matches = brain_search(query, limit=4)
+        for m in b_matches:
+            b_line = f"brain/{m['topic']}: {m['content']}"
+            if b_line not in lines:
+                lines.append(b_line)
+    except Exception:
+        pass
+
+    if not lines:
         return (f"Nothing stored about '{query}'." if query
                 else "I have not stored anything about this person yet.")
 
-    rows.sort(key=lambda r: (-r[0], r[2]))
-    lines = [f"{cat}/{_pretty(key)}: {val}" for _s, cat, key, val in rows[:max(1, limit)]]
-    head  = (f"Stored facts matching '{query}':" if query
-             else "Everything currently stored:")
     more  = (f"\n(+{len(rows) - len(lines)} more — search with a narrower keyword)"
              if len(rows) > len(lines) else "")
     return head + "\n" + "\n".join(lines) + more
@@ -406,16 +423,29 @@ def remember(key: str, value: str, category: str = "notes") -> str:
     if category not in valid:
         category = "notes"
     update_memory({category: {key: {"value": value}}})
+    try:
+        from memory.brain_engine import learn as brain_learn
+        brain_learn(content=value, topic=key, category=category)
+    except Exception:
+        pass
     return f"Remembered: {category}/{key} = {value}"
 
 
 def forget(key: str, category: str = "notes") -> str:
     memory = load_memory()
     cat    = memory.get(category, {})
+    forgotten = False
     if key in cat:
         del cat[key]
         memory[category] = cat
         save_memory(memory)
+        forgotten = True
+    try:
+        from memory.brain_engine import forget as brain_forget
+        brain_forget(key)
+    except Exception:
+        pass
+    if forgotten:
         return f"Forgotten: {category}/{key}"
     return f"Not found: {category}/{key}"
 

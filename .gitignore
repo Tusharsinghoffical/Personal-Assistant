@@ -21,6 +21,7 @@ config/whatsapp_web/
 
 # ── Personal data the assistant accumulates about you ─────────────────────────
 memory/long_term.json
+memory/brain_store.json
 memory/*.db
 
 # ── Python build noise ────────────────────────────────────────────────────────
