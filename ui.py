@@ -620,22 +620,7 @@ class HudCanvas(QWidget):
                 p.setPen(QPen(qcol(C.PRI_DIM, 170), 1))
                 p.drawText(QRectF(tx - 16, ty - 8, 32, 16), Qt.AlignmentFlag.AlignCenter, f"{deg:03d}°")
 
-        # 4. Corner HUD brackets & Telemetry Labels
-        bl = 26
-        bc = qcol(C.PRI, 200)
-        hl, hr = cx - fw * 0.48, cx + fw * 0.48
-        ht, hb = cy - fw * 0.48, cy + fw * 0.48
-        p.setPen(QPen(bc, 1.8))
-        for bx, by, dx, dy in [(hl, ht, 1, 1), (hr, ht, -1, 1), (hl, hb, 1, -1), (hr, hb, -1, -1)]:
-            p.drawLine(QPointF(bx, by), QPointF(bx + dx * bl, by))
-            p.drawLine(QPointF(bx, by), QPointF(bx, by + dy * bl))
-
-        p.setFont(QFont("Courier New", 6, QFont.Weight.Bold))
-        p.setPen(QPen(qcol(C.TEXT_DIM, 140), 1))
-        p.drawText(QRectF(hl + 4, ht + 4, 180, 14), Qt.AlignmentFlag.AlignLeft, "MK-LIII // ARC REACTOR")
-        p.drawText(QRectF(hr - 184, ht + 4, 180, 14), Qt.AlignmentFlag.AlignRight, "QUANTUM STABLE")
-
-        # 5. Expanding Pulse Waves
+        # 4. Expanding Pulse Waves
         for pr in self._pulses:
             a = max(0, int(180 * (1.0 - pr / (fw * 0.76))))
             p.setPen(QPen(qcol(core_col, a), 1.4))
@@ -1157,23 +1142,6 @@ class _DropCanvas(QWidget):
         pen.setDashOffset(z._dash_offset)
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(rect, 4, 4)
-
-        # Tactical corner brackets (HUD crosshairs)
-        bracket_col = qcol(C.PRI if (z._hovering or z._drag_over) else C.PRI_DIM, 200)
-        p.setPen(QPen(bracket_col, 1.5))
-        c_len = 8.0
-        # Top-left
-        p.drawLine(QPointF(pad, pad + c_len), QPointF(pad, pad))
-        p.drawLine(QPointF(pad, pad), QPointF(pad + c_len, pad))
-        # Top-right
-        p.drawLine(QPointF(W - pad - c_len, pad), QPointF(W - pad, pad))
-        p.drawLine(QPointF(W - pad, pad), QPointF(W - pad, pad + c_len))
-        # Bottom-left
-        p.drawLine(QPointF(pad, H - pad - c_len), QPointF(pad, H - pad))
-        p.drawLine(QPointF(pad, H - pad), QPointF(pad + c_len, pad - pad + H - pad))
-        # Bottom-right
-        p.drawLine(QPointF(W - pad - c_len, H - pad), QPointF(W - pad, H - pad))
-        p.drawLine(QPointF(W - pad, H - pad - c_len), QPointF(W - pad, H - pad))
 
         if z._current_file:   self._paint_file(p, W, H)
         elif z._drag_over:    self._paint_drag_over(p, W, H)
