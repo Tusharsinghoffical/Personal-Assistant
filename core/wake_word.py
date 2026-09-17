@@ -27,9 +27,9 @@ from typing import Callable
 DEFAULT_THRESHOLD = 300.0
 SAMPLE_RATE = 16000
 
-# Matches "mark", "hey mark", "ok mark", "hello mark", "marck", "marc" or Hindi "मार्क"
+# Matches "mark", "hey mark", "mark wake up", "wake up", "wake up mark", etc. or Hindi
 WAKE_PATTERN = re.compile(
-    r'\b(mark|marc|marck|hey mark|ok mark|hello mark)\b|मार्क|माक',
+    r'\b(mark|marc|marck|hey mark|ok mark|hello mark|wake up|mark wake up|wake up mark|hey mark wake up|start up|systems online)\b|मार्क|माक|जागो|उठो',
     re.IGNORECASE
 )
 

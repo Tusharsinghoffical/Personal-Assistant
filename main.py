@@ -462,13 +462,16 @@ class JarvisLive:
         self.wake(reason="wake word")
 
     def wake(self, reason: str = "wake word") -> None:
-        if self._awake:
-            return
         self._awake = True
         self._last_user_speech = time.monotonic()   # start the auto-sleep clock now
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
         self.ui.write_log(f"SYS: Awake — {reason}.")
+        try:
+            from core.voice_packs import play_wake_sound
+            play_wake_sound(self.ui)
+        except Exception as _e:
+            print(f"[Wake] Voice pack error: {_e}")
 
     def sleep(self, reason: str = "timeout") -> None:
         if not self._awake:
