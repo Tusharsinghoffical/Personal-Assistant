@@ -853,8 +853,8 @@ class MetricBar(QWidget):
         W, H = self.width(), self.height()
 
         # Cyber panel frame with cut corner
-        p.setBrush(QBrush(qcol(C.PANEL2)))
-        p.setPen(QPen(qcol(C.BORDER_A), 1))
+        p.setBrush(QBrush(QColor(2, 18, 30, 90)))
+        p.setPen(QPen(qcol(C.BORDER_A, 180), 1))
         p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 3, 3)
 
         # Segmented 10-block LED track
@@ -908,15 +908,15 @@ class LogWidget(QTextEdit):
         self.setFont(QFont("Courier New", 9))
         self.setStyleSheet(f"""
             QTextEdit {{
-                background: #020a13;
+                background: rgba(2, 10, 19, 0.45);
                 color: {C.TEXT};
-                border: 1px solid {C.BORDER};
+                border: 1px solid rgba(13, 60, 84, 0.6);
                 border-radius: 4px;
                 padding: 8px;
                 selection-background-color: rgba(0, 245, 255, 0.25);
             }}
             QScrollBar:vertical {{
-                background: #01060c;
+                background: transparent;
                 width: 7px;
                 border: none;
                 margin: 2px 0;
@@ -1129,7 +1129,7 @@ class _DropCanvas(QWidget):
         pad  = 6
         rect = QRectF(pad, pad, W - pad * 2, H - pad * 2)
 
-        bg_col = qcol("#03131e" if z._drag_over else ("#020f18" if z._hovering else "#010910"))
+        bg_col = QColor(2, 18, 30, 110 if z._drag_over else (75 if z._hovering else 35))
         p.setBrush(QBrush(bg_col)); p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(rect, 4, 4)
 
@@ -3670,7 +3670,7 @@ class MainWindow(QMainWindow):
     def _build_left_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_LEFT_W)
-        w.setStyleSheet(f"background: {C.DARK}; border-right: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: transparent; border-right: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(8, 10, 8, 10)
         lay.setSpacing(7)
@@ -3696,7 +3696,7 @@ class MainWindow(QMainWindow):
 
         info_panel = QWidget()
         info_panel.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER_A}; border-radius: 4px;"
+            f"background: rgba(2, 18, 30, 0.45); border: 1px solid {C.BORDER_A}; border-radius: 4px;"
         )
         ip_lay = QVBoxLayout(info_panel)
         ip_lay.setContentsMargins(7, 6, 7, 6)
@@ -3732,7 +3732,7 @@ class MainWindow(QMainWindow):
             lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(
-                f"color: {col}; background: {C.PANEL2};"
+                f"color: {col}; background: rgba(2, 18, 30, 0.45);"
                 f"border: 1px solid {C.BORDER_A}; border-radius: 3px; padding: 4px;"
             )
             lay.addWidget(lbl)
@@ -3741,7 +3741,7 @@ class MainWindow(QMainWindow):
     def _build_right_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_RIGHT_W)
-        w.setStyleSheet(f"background: #020912; border-left: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: transparent; border-left: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
@@ -3975,12 +3975,12 @@ class MainWindow(QMainWindow):
         self._input.setFixedHeight(32)
         self._input.setStyleSheet(f"""
             QLineEdit {{
-                background: #020d18; color: {C.WHITE};
+                background: rgba(2, 13, 24, 0.5); color: {C.WHITE};
                 border: 1px solid {C.BORDER}; border-radius: 4px; padding: 4px 9px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {C.PRI};
-                background: #031422;
+                background: rgba(3, 20, 34, 0.85);
             }}
         """)
         self._input.returnPressed.connect(self._send)
