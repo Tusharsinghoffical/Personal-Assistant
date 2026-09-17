@@ -86,17 +86,35 @@ def _compress(img_bytes: bytes, source_format: str = "PNG") -> tuple[bytes, str]
 
 
 def _capture_screen() -> tuple[bytes, str]:
+    # 1. Try mss first
+    if _MSS:
+        try:
+            with mss.mss() as sct:
+                monitors = sct.monitors          # [0] = all combined, [1..n] = real screens
+                target   = monitors[1] if len(monitors) > 1 else monitors[0]
+                shot     = sct.grab(target)
+                png      = mss.tools.to_png(shot.rgb, shot.size)
+            return _compress(png, "PNG")
+        except Exception as e:
+            print(f"[Vision] ⚠️ MSS screen grab failed: {e}. Falling back to Qt...")
 
-    if not _MSS:
-        raise RuntimeError("mss is not installed. Run: pip install mss")
+    # 2. Fallback to PyQt6 grabWindow (ultra-reliable on Windows)
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtGui import QGuiApplication
+        from PyQt6.QtCore import QBuffer, QIODevice
+        app = QApplication.instance() or QApplication([])
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            pixmap = screen.grabWindow(0)
+            buf = QBuffer()
+            buf.open(QIODevice.OpenModeFlag.WriteOnly)
+            pixmap.save(buf, "PNG")
+            return _compress(bytes(buf.data()), "PNG")
+    except Exception as e:
+        print(f"[Vision] ⚠️ Qt screen grab failed: {e}")
 
-    with mss.mss() as sct:
-        monitors = sct.monitors          # [0] = all combined, [1..n] = real screens
-        target   = monitors[1] if len(monitors) > 1 else monitors[0]
-        shot     = sct.grab(target)
-        png      = mss.tools.to_png(shot.rgb, shot.size)
-
-    return _compress(png, "PNG")
+    raise RuntimeError("No working screen grab backend available.")
 
 
 def _cv2_backend() -> int:

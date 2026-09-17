@@ -39,6 +39,10 @@ It's not just an assistant — it's an extension of your digital life.
 | 🔊 Precise Volume Control | Set exact system volume percentage (0–100%) or step up/down smoothly via voice in English/Hindi with full undo support |
 | 📸 Camera & Photo Capture | Capture webcam photos hands-free with instant HUD preview; stored in `Pictures/Mark_Captures` |
 | 🖥️ Screenshot & Viewer | High-fidelity screen capture and voice commands to open & view captured photos or screenshots in the default OS viewer |
+| 💻 Full Terminal Control | Autonomous shell command execution (PowerShell/CMD/Bash), process listing & killing, and system specs |
+| 👁️ Advanced Screen Analyzer | Real-time multimodal screen inspection, on-screen error/code debugging, and open window detection |
+| 🎬 Multimedia Video Creator | Real-time screen recording to MP4, timed video clips, and automated presentation video synthesis |
+| 🌐 Multilingual Fluency | Expert-level multi-language conversation, fluent code-switching (Hinglish), and colloquial adaptation |
 | 🎭 Emotion-Adaptive HUD | Real-time emotional HUD theming (Happy gold, Angry fire red, Sad blue, Singing violet) matching conversational mood |
 | 🧩 Autonomous Tasks | High-level planning for complex multi-step goals via agent mode |
 | 👁️ Visual Awareness | Real-time screen capture and webcam vision piped into your main Gemini session |
@@ -239,6 +243,9 @@ Mark/
 │   ├── _template.py          # Copy this to write a new plugin — one file, drop in, done
 │   └── ...                   # Drop-in skills (each self-describes via a PLUGIN dict + run())
 ├── actions/                  # Bundled skills — each self-describes via a TOOL dict + handler
+│   ├── terminal_control.py   # Full shell command execution & process management
+│   ├── screen_analyzer.py    # Real-time visual screen analysis & OCR
+│   ├── video_creator.py      # Real-time screen recording & video story synthesis
 │   ├── camera_photo.py       # Webcam photo capture, screenshot taking, and image viewer
 │   ├── emotion_control.py    # Real-time emotional HUD theming & expression
 │   ├── computer_settings.py  # Volume (% & relative), brightness, WiFi, power (per-OS)
