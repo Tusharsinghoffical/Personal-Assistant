@@ -163,6 +163,22 @@ def update_memory(memory_update: dict) -> dict:
     if _recursive_update(memory, memory_update):
         save_memory(memory)
         print(f"[Memory] 💾 Saved: {list(memory_update.keys())}")
+        try:
+            from memory.brain_engine import learn as brain_learn
+            for cat, items in memory_update.items():
+                if isinstance(items, dict):
+                    for k, v in items.items():
+                        val_str = v.get("value") if isinstance(v, dict) else str(v)
+                        if val_str:
+                            b_cat = "preference" if cat == "preferences" else ("concept" if cat == "projects" else ("rule" if cat in ("rules", "habits") else "knowledge"))
+                            brain_learn(
+                                content=val_str,
+                                topic=k.replace("_", " ").title(),
+                                category=b_cat,
+                                source="update_memory"
+                            )
+        except Exception as e:
+            print(f"[Memory] Brain sync warning: {e}")
     return memory
 
 def _entry_value(entry) -> str:
@@ -303,7 +319,26 @@ def format_memory_for_prompt(memory: dict | None) -> str:
         *core_lines,
     ]
 
-    # 3. The index of what is on disk but not in this prompt
+    # 3. Active Brain Rules & Standing Directives
+    try:
+        from memory.brain_engine import load_brain
+        _brain = load_brain()
+        _rules = _brain.get("rules_and_habits", [])
+        if _rules:
+            out.append("")
+            out.append("[ACTIVE RULES & STANDING GUIDELINES]")
+            for _r in _rules[-4:]:
+                out.append(f"  - {_r.get('topic')}: {_r.get('rule')}")
+
+        _cmds = _brain.get("commands_history", [])
+        if _cmds:
+            _recent_cmds = [f'"{_c.get("command")}"' for _c in _cmds[-3:]]
+            out.append("")
+            out.append(f"[RECENT USER COMMANDS RECORDED: {', '.join(_recent_cmds)}]")
+    except Exception:
+        pass
+
+    # 4. The index of what is on disk but not in this prompt
     if indexed:
         budget, names = PROMPT_INDEX_CHARS, []
         for n in indexed:
@@ -398,10 +433,64 @@ def search_memory(query: str, limit: int = 8) -> str:
 
 
 def all_entries_for_ui() -> list[dict]:
-    """Flat list for the memory panel: what JARVIS knows, and when it learned it.
+    """Flat list for the memory panel: what Mark knows, commands executed, and cognitive learning.
     Sorted newest first so the panel opens on what changed most recently."""
-    memory = load_memory()
     rows = []
+    seen_keys = set()
+
+    # 1. Cognitive Brain Memories (Knowledge, Rules, Concepts, Preferences)
+    try:
+        from memory.brain_engine import load_brain
+        brain = load_brain()
+        for m in brain.get("memories", []):
+            topic = m.get("topic", "")
+            cat = m.get("category", "knowledge")
+            val = m.get("content", "")
+            reinf = m.get("reinforcement_count", 1)
+            reinf_str = f" [★ {reinf}x]" if reinf > 1 else ""
+            dedup_key = f"{cat}:{topic.lower()}"
+            if dedup_key not in seen_keys and val:
+                seen_keys.add(dedup_key)
+                rows.append({
+                    "category": cat,
+                    "key": f"{topic}{reinf_str}",
+                    "value": val,
+                    "updated": m.get("learned_at", m.get("last_recalled_at", "")),
+                    "reinforcement": reinf,
+                    "importance": m.get("importance", 3),
+                })
+
+        # 2. Commands History
+        for c in reversed(brain.get("commands_history", [])[-25:]):
+            cmd_text = c.get("command", "")
+            action = c.get("action", "")
+            rows.append({
+                "category": "commands",
+                "key": f"Cmd: {cmd_text[:28]}",
+                "value": f"{cmd_text} → {action}",
+                "updated": c.get("timestamp", ""),
+                "reinforcement": 1,
+                "importance": 3,
+            })
+
+        # 3. Conversation Episodes
+        for ep in reversed(brain.get("dialogue_journal", [])[-15:]):
+            u_msg = ep.get("user", "")
+            m_resp = ep.get("mark", "")
+            if u_msg:
+                rows.append({
+                    "category": "conversations",
+                    "key": f"Topic: {u_msg[:25]}",
+                    "value": f"User: \"{u_msg}\" | Mark: \"{m_resp[:60]}\"",
+                    "updated": ep.get("timestamp", ""),
+                    "reinforcement": 1,
+                    "importance": 2,
+                })
+    except Exception as e:
+        print(f"[Memory] all_entries_for_ui brain error: {e}")
+
+    # 4. Long-term entries (Identity, Preferences, etc.)
+    memory = load_memory()
     for cat, items in memory.items():
         if not isinstance(items, dict):
             continue
@@ -409,13 +498,19 @@ def all_entries_for_ui() -> list[dict]:
             val = _entry_value(entry)
             if not val:
                 continue
-            rows.append({
-                "category": cat,
-                "key":      key,
-                "value":    val,
-                "updated":  (entry.get("updated", "") if isinstance(entry, dict) else ""),
-            })
-    rows.sort(key=lambda r: (r["updated"] or "0000-00-00"), reverse=True)
+            dedup_key = f"{cat}:{key.lower()}"
+            if dedup_key not in seen_keys:
+                seen_keys.add(dedup_key)
+                rows.append({
+                    "category": cat,
+                    "key": key.replace("_", " ").title(),
+                    "value": val,
+                    "updated": (entry.get("updated", "") if isinstance(entry, dict) else ""),
+                    "reinforcement": 1,
+                    "importance": 3,
+                })
+
+    rows.sort(key=lambda r: (r.get("updated") or "0000-00-00"), reverse=True)
     return rows
 
 def remember(key: str, value: str, category: str = "notes") -> str:

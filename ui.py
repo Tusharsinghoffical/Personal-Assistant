@@ -2000,14 +2000,16 @@ class MemoryOverlay(_HudOverlay):
     the other half of that change — a memory you cannot inspect is a memory you
     cannot trust, and 'delete' has to be something the person can do."""
 
-    _OW = 520
+    _OW = 590
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._filter_cat = "all"
+        self._search_text = ""
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             MemoryOverlay {{
-                background: rgba(0, 6, 10, 246);
+                background: rgba(0, 8, 14, 248);
                 border: 1px solid {C.BORDER_B};
                 border-radius: 6px;
             }}
@@ -2016,27 +2018,14 @@ class MemoryOverlay(_HudOverlay):
 
         self._lay = QVBoxLayout(self)
         self._lay.setContentsMargins(20, 16, 20, 16)
-        self._lay.setSpacing(5)
+        self._lay.setSpacing(8)
         self._rebuild()
 
     def _clear_layout(self):
-        """Take every item out of the layout and detach it from the widget tree
-        in this call.
-
-        deleteLater() on its own is not enough: it queues destruction for the
-        next event-loop pass, and until then the old rows are still children of
-        this widget and still paint — which is what drew half of the previous
-        panel over the new one. setParent(None) removes them from the tree now;
-        deleteLater() then frees them safely."""
         while self._lay.count():
             item = self._lay.takeAt(0)
             w = item.widget()
             if w is not None:
-                # hide() stops it painting in this frame; deleteLater() frees it
-                # safely afterwards. setParent(None) would also stop the paint,
-                # but it turns the widget into a top-level window for the moment
-                # between the two calls, which is not something to leave lying
-                # around inside a click handler.
                 w.hide()
                 w.deleteLater()
                 continue
@@ -2051,22 +2040,6 @@ class MemoryOverlay(_HudOverlay):
                 sub.deleteLater()
 
     def _settle(self, before):
-        """Size the panel to its content, re-centre it, and repaint what the old
-        size covered.
-
-        The re-size has to happen here rather than at the end of _rebuild
-        because Qt has not polished the freshly-created children at that point,
-        so the size hint it would read is the empty-layout one. Measured: a
-        first adjustSize() returned 32 px for a panel whose content needed 155,
-        and a second call — after the same widgets had been through the event
-        loop — returned 155. So this runs twice: once now, once on the next
-        turn, from _rebuild.
-
-        The re-centre and the repaint are needed because the overlay is placed
-        by hand and is in no layout: shrinking it leaves it off-centre and
-        leaves its former pixels on screen, since nothing tells the parent that
-        region changed. The repaint has to cover the union of the old and new
-        rectangles."""
         self._lay.invalidate()
         self._lay.activate()
         self.updateGeometry()
@@ -2086,70 +2059,137 @@ class MemoryOverlay(_HudOverlay):
         self._clear_layout()
 
         from memory.memory_manager import all_entries_for_ui
+        from memory.brain_engine import get_brain_stats
 
-        hdr = QLabel("🧠  WHAT MARK REMEMBERS")
+        stats = get_brain_stats()
+        all_rows = all_entries_for_ui()
+
+        # Header
+        top_bar = QHBoxLayout()
+        hdr = QLabel("🧠  MARK BRAIN CONTAINER")
         hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
-        self._lay.addWidget(hdr)
+        top_bar.addWidget(hdr)
+
+        v_tag = QLabel("v3.0 LIFELONG RETENTION")
+        v_tag.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        v_tag.setStyleSheet(f"color: {C.CYAN}; border: 1px solid {C.CYAN}; border-radius: 3px; padding: 2px 5px;")
+        top_bar.addWidget(v_tag)
+        top_bar.addStretch()
+        self._lay.addLayout(top_bar)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         self._lay.addWidget(sep)
 
-        rows = all_entries_for_ui()
+        # Search box
+        search_box = QLineEdit(self._search_text)
+        search_box.setPlaceholderText("Search brain memories, commands, or rules...")
+        search_box.setFont(QFont("Courier New", 8))
+        search_box.setStyleSheet(f"""
+            QLineEdit {{
+                background: #000d14; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px;
+                padding: 4px 8px;
+            }}
+            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
+        """)
+        search_box.textChanged.connect(self._on_search_changed)
+        self._lay.addWidget(search_box)
 
-        cap = QLabel(f"{len(rows)} stored facts — newest first. "
-                     f"Nothing here is sent anywhere; it lives in "
-                     f"memory/long_term.json on this machine.")
-        cap.setWordWrap(True)
-        cap.setFont(QFont("Courier New", 7))
-        cap.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-        self._lay.addWidget(cap)
+        # Filter Tabs: All | Brain & Rules | Commands | Conversations | Identity
+        tab_row = QHBoxLayout(); tab_row.setSpacing(4)
+        tabs = [
+            ("all", f"ALL ({len(all_rows)})"),
+            ("brain", f"🧠 KNOWLEDGE ({stats.get('total_learnings', 0)})"),
+            ("commands", f"⚡ COMMANDS ({stats.get('total_commands', 0)})"),
+            ("conversations", f"💬 DIALOGUES ({stats.get('total_episodes', 0)})"),
+            ("identity", "👤 IDENTITY"),
+        ]
 
-        if not rows:
-            empty = QLabel("Nothing stored yet.")
+        for cat_id, label in tabs:
+            btn = QPushButton(label)
+            btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            is_active = (self._filter_cat == cat_id)
+            active_style = f"background: rgba(0, 180, 255, 30); color: {C.PRI}; border: 1px solid {C.PRI};" if is_active else f"background: transparent; color: {C.TEXT_DIM}; border: 1px solid {C.BORDER};"
+            btn.setStyleSheet(f"""
+                QPushButton {{ {active_style} border-radius: 3px; padding: 3px 6px; }}
+                QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+            """)
+            btn.clicked.connect(lambda _=False, c=cat_id: self._set_filter(c))
+            tab_row.addWidget(btn)
+        self._lay.addLayout(tab_row)
+
+        # Filter rows
+        filtered = []
+        q = self._search_text.strip().lower()
+        for r in all_rows:
+            cat = r.get("category", "").lower()
+            if self._filter_cat == "brain" and cat not in ("knowledge", "rule", "habit", "concept", "preference", "notes"):
+                continue
+            elif self._filter_cat == "commands" and cat != "commands":
+                continue
+            elif self._filter_cat == "conversations" and cat != "conversations":
+                continue
+            elif self._filter_cat == "identity" and cat not in ("identity", "profile"):
+                continue
+
+            if q:
+                if q not in r.get("key", "").lower() and q not in r.get("value", "").lower() and q not in cat:
+                    continue
+            filtered.append(r)
+
+        if not filtered:
+            empty = QLabel("No memory items found matching filter.")
             empty.setFont(QFont("Courier New", 9))
-            empty.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+            empty.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; padding: 12px 0;")
             self._lay.addWidget(empty)
         else:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
-            scroll.setFixedHeight(min(420, 34 * len(rows) + 10))
+            scroll.setFixedHeight(min(420, max(120, 36 * len(filtered) + 10)))
             scroll.setStyleSheet(
                 f"QScrollArea {{ border: 1px solid {C.BORDER}; border-radius: 3px; "
                 f"background: transparent; }}"
             )
             inner = QWidget()
-            ilay  = QVBoxLayout(inner)
+            ilay = QVBoxLayout(inner)
             ilay.setContentsMargins(6, 6, 6, 6)
             ilay.setSpacing(3)
 
-            for r in rows:
+            for r in filtered:
                 line = QHBoxLayout(); line.setSpacing(6)
-                txt = QLabel(f"<b>{r['key'].replace('_', ' ')}</b> "
-                             f"<span style='color:{C.TEXT_MED}'>— {r['value']}</span>")
+                cat_name = r.get("category", "knowledge")[:4].upper()
+                badge_col = C.PRI if cat_name in ("KNOW", "RULE") else (C.CYAN if cat_name == "COMM" else C.TEXT_MED)
+
+                badge = QLabel(f"[{cat_name}]")
+                badge.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+                badge.setStyleSheet(f"color: {badge_col}; background: transparent;")
+                line.addWidget(badge)
+
+                txt = QLabel(f"<b>{r['key']}</b> <span style='color:{C.TEXT_MED}'>— {r['value']}</span>")
                 txt.setWordWrap(True)
                 txt.setFont(QFont("Courier New", 8))
                 txt.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
                 line.addWidget(txt, 1)
 
-                meta = QLabel(f"{r['category'][:4]} · {r['updated'] or '—'}")
+                meta = QLabel(r.get("updated", "")[:10] or "—")
                 meta.setFont(QFont("Courier New", 7))
                 meta.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
                 line.addWidget(meta)
 
                 rm = QPushButton("✕")
-                rm.setFixedSize(20, 20)
-                rm.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+                rm.setFixedSize(18, 18)
+                rm.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
                 rm.setCursor(Qt.CursorShape.PointingHandCursor)
                 rm.setToolTip("Forget this")
                 rm.setStyleSheet(f"""
                     QPushButton {{ background: transparent; color: {C.TEXT_DIM};
-                        border: 1px solid {C.BORDER}; border-radius: 3px; }}
+                        border: 1px solid {C.BORDER}; border-radius: 2px; }}
                     QPushButton:hover {{ color: {C.RED}; border-color: {C.RED}; }}
                 """)
-                rm.clicked.connect(
-                    lambda _=False, c=r["category"], k=r["key"]: self._forget(c, k))
+                rm.clicked.connect(lambda _=False, c=r["category"], k=r["key"]: self._forget(c, k))
                 line.addWidget(rm)
 
                 holder = QWidget()
@@ -2161,7 +2201,7 @@ class MemoryOverlay(_HudOverlay):
             self._lay.addWidget(scroll)
 
         close = QPushButton("CLOSE")
-        close.setFixedHeight(30)
+        close.setFixedHeight(28)
         close.setFont(QFont("Courier New", 9))
         close.setCursor(Qt.CursorShape.PointingHandCursor)
         close.setStyleSheet(f"""
@@ -2173,18 +2213,21 @@ class MemoryOverlay(_HudOverlay):
         self._lay.addWidget(close)
 
         self._settle(before)
-        # …and again once Qt has polished the new children, because the size
-        # hint is not final until then. Harmless when the first pass already
-        # got it right: _settle is idempotent.
         QTimer.singleShot(0, lambda g=before: self._settle(g))
+
+    def _set_filter(self, cat: str):
+        self._filter_cat = cat
+        self._rebuild()
+
+    def _on_search_changed(self, text: str):
+        self._search_text = text
+        # Fast rebuild on search change
+        self._rebuild()
 
     def _forget(self, category: str, key: str):
         from memory.memory_manager import forget
-        forget(key, category)
-        # Rebuild on the NEXT event-loop turn, not inside this click handler.
-        # The rebuild destroys the very ✕ button that emitted this signal, and
-        # Qt is entitled to touch the sender after a slot returns; tearing it
-        # down mid-emission is how a widget ends up half-alive on screen.
+        clean_k = key.split(" [★")[0].replace("Cmd: ", "").replace("Topic: ", "").strip()
+        forget(clean_k, category)
         QTimer.singleShot(0, self._rebuild)
 
 

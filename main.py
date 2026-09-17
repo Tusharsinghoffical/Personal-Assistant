@@ -768,6 +768,17 @@ class JarvisLive:
             value    = args.get("value", "")
             if key and value:
                 update_memory({category: {key: {"value": value}}})
+                try:
+                    from memory.brain_engine import learn as brain_learn
+                    b_cat = "preference" if category == "preferences" else ("concept" if category == "projects" else ("rule" if category in ("rules", "habits") else "knowledge"))
+                    brain_learn(
+                        content=value,
+                        topic=key.replace("_", " ").title(),
+                        category=b_cat,
+                        source="save_memory"
+                    )
+                except Exception as _sync_err:
+                    print(f"[Memory] Brain sync error: {_sync_err}")
                 print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
             if not self.ui.muted:
                 self.ui.set_state("LISTENING")
@@ -906,6 +917,20 @@ class JarvisLive:
             self.ui.set_state("LISTENING")
 
         print(f"[MARK] 📤 {name} → {str(result)[:80]}")
+
+        # Automatically record procedural command execution into brain container
+        try:
+            from memory.brain_engine import record_command
+            cmd_summary = f"{name}({', '.join(f'{k}={v}' for k, v in args.items())})" if args else name
+            record_command(
+                command_text=cmd_summary,
+                action_taken=str(result)[:120],
+                tool_used=name,
+                status="failed" if "failed" in str(result).lower() else "executed"
+            )
+        except Exception as _rc_err:
+            print(f"[BrainEngine] record_command error: {_rc_err}")
+
         return types.FunctionResponse(
             id=fc.id, name=name,
             response={"result": result}
@@ -1090,6 +1115,17 @@ class JarvisLive:
                                         "text": full_out,
                                         "ts": datetime.now().isoformat(),
                                     }))
+
+                            # Autonomous cognitive memory intake into lifelong brain container (non-blocking)
+                            if full_in or full_out:
+                                try:
+                                    from memory.brain_engine import record_interaction
+                                    asyncio.create_task(
+                                        asyncio.to_thread(record_interaction, full_in, full_out)
+                                    )
+                                except Exception as _be_err:
+                                    print(f"[BrainEngine] Intake dispatch error: {_be_err}")
+
                             out_buf = []
 
                             # Vision injection: model finished tool-response turn → now send the image
