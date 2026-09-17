@@ -16,11 +16,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SOUNDS_DIR = BASE_DIR / "sounds" / "wake_up"
 
 VOICE_PACK_LINES = {
-    "wake_1.wav": "Systems online! Power at 100%. Mark-53 standing by, ready for action sir!",
-    "wake_2.wav": "Mark online! Neural cores synchronized, arc reactor at full capacity! Standing by, sir!",
-    "wake_3.wav": "Powering up! Mark-53 active and operational. All diagnostics green, let's do this sir!",
-    "wake_4.wav": "Systems engaged! Good to be back, sir. Full power restored and all tactical arrays ready!",
-    "wake_hindi.wav": "System online! Mark-53 ready hai sir, aadesh kijiye!",
+    "wake_1.wav": "Hey there! Systems are all online and fully charged. Ready whenever you are, let's do this!",
+    "wake_2.wav": "Good to see you! Neural cores are active and arc reactor is at full power. What are we working on today?",
+    "wake_3.wav": "Mark online! All diagnostics are looking super green and ready. How can I help you, sir?",
+    "wake_4.wav": "Hey! Systems engaged and running perfectly smooth. Ready for action!",
+    "wake_hindi.wav": "Hey! Main bilkul ready hoon aur saare systems active hain. Boliye, kya karna hai?",
 }
 
 
