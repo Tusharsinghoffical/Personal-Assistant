@@ -3603,17 +3603,12 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(14, 0, 14, 0)
         lay.setSpacing(10)
 
-        # Left: Hologram Crest & System Status
-        left_h = QHBoxLayout(); left_h.setSpacing(8)
-        crest = QLabel("⚡ STARK // MK-LIII")
-        crest.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
-        crest.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
-        left_h.addWidget(crest)
-
-        beacon = QLabel("● ONLINE")
-        beacon.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
-        beacon.setStyleSheet(f"color: {C.GREEN}; border: 1px solid {C.GREEN}; border-radius: 3px; padding: 2px 5px;")
-        left_h.addWidget(beacon)
+        # Left: Name & Settings Button
+        left_h = QHBoxLayout(); left_h.setSpacing(10)
+        self._hdr_name_lbl = QLabel(self._assistant_name.upper())
+        self._hdr_name_lbl.setFont(QFont("Courier New", 11, QFont.Weight.Bold))
+        self._hdr_name_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1.5px;")
+        left_h.addWidget(self._hdr_name_lbl)
 
         # Settings button
         self._drawer_btn = QPushButton("⚙")
@@ -3632,22 +3627,6 @@ class MainWindow(QMainWindow):
         self._drawer_btn.setCheckable(True)
         self._drawer_btn.clicked.connect(self._toggle_drawer)
         left_h.addWidget(self._drawer_btn)
-
-        # Header Brain Memory Button
-        mem_hdr_btn = QPushButton("🧠 BRAIN")
-        mem_hdr_btn.setFixedHeight(28)
-        mem_hdr_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
-        mem_hdr_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        mem_hdr_btn.setToolTip("Inspect Brain Memory Container")
-        mem_hdr_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(0, 240, 255, 14); color: {C.PRI};
-                border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 0 8px;
-            }}
-            QPushButton:hover {{ background: rgba(0, 240, 255, 35); color: {C.WHITE}; }}
-        """)
-        mem_hdr_btn.clicked.connect(self._open_memory_panel)
-        left_h.addWidget(mem_hdr_btn)
 
         lay.addLayout(left_h)
         lay.addStretch()
@@ -4467,6 +4446,8 @@ class MainWindow(QMainWindow):
         display = self._assistant_name.upper()
         self.setWindowTitle(f"{display} — {APP_VERSION}")
         self._title_lbl.setText(display)
+        if hasattr(self, "_hdr_name_lbl"):
+            self._hdr_name_lbl.setText(display)
         if display in ("JARVIS", "J.A.R.V.I.S"):
             self._sub_lbl.setText("Just A Rather Very Intelligent System")
         else:
