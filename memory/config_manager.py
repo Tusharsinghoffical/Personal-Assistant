@@ -140,8 +140,8 @@ def save_wake_sleep_timeout(timeout_secs: float) -> None:
 
 
 def get_start_awake() -> bool:
-    """Whether Mark starts awake on full restart/launch instead of immediately booting into sleep mode."""
-    return load_api_keys().get("start_awake", True)
+    """Whether Mark starts awake on full restart/launch. Defaults to False so wake detector is active on start."""
+    return load_api_keys().get("start_awake", False)
 
 
 def save_start_awake(start_awake: bool) -> None:

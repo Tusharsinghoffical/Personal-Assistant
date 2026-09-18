@@ -442,8 +442,8 @@ class JarvisLive:
         self._wake_enabled       = get_wake_word_enabled()
         self._auto_sleep_enabled = get_auto_sleep_enabled()
         self._wake_sleep_timeout = get_wake_sleep_timeout()
-        # Start awake if wake word is off OR if start_awake is configured
-        self._awake              = (not self._wake_enabled) or get_start_awake()
+        # Start asleep when wake word is enabled so wake detector listens for 'Hey Mark'
+        self._awake              = not self._wake_enabled
         self._wake_detector: WakeWordDetector | None = None
         # UI control surface for the Wake Word settings section.
         self.ui.wake_is_ready    = wake_is_ready          # () -> bool
