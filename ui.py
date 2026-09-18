@@ -4388,7 +4388,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] MUTE  ·  [ESC] INTERRUPT  ·  [F11] FULLSCREEN  ·  [CTRL+M] BRAIN", C.ACC2))
         lay.addStretch()
-        lay.addWidget(_fl("◈ STARK INDUSTRIES // MARK-LIII TACTICAL OS", C.PRI_DIM))
+        lay.addWidget(_fl("◈ MR. Singh  // MARK-LIII TACTICAL OS", C.PRI_DIM))
         return w
 
     def _on_file_selected(self, path: str):

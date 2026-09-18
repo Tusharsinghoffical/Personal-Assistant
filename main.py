@@ -362,6 +362,17 @@ def _keep_context_of(exc: BaseException) -> bool:
     return True
 
 
+def _is_goaway_error(exc: BaseException) -> bool:
+    """True if `exc` is a 1008 GoAway error (session duration limit reached),
+    or a (Base)ExceptionGroup containing one."""
+    err_str = str(exc).lower()
+    if any(k in err_str for k in ("1008", "goaway", "session duration", "failed to close the connection after receiving a goaway")):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_is_goaway_error(sub) for sub in exc.exceptions)
+    return False
+
+
 class JarvisLive:
     def __init__(self, ui: JarvisUI):
         self.ui             = ui
@@ -435,6 +446,12 @@ class JarvisLive:
         self.ui.get_plugins = self._plugin_registry.list_for_ui
         self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
+
+        # ── In-Flight Task Protection & Rollover Survivability ────────────────
+        self._active_tasks: dict[str, dict] = {}
+        self._pending_task_results: list[dict] = []
+        self._task_counter: int = 0
+        self._is_rollover: bool = False
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
@@ -571,6 +588,60 @@ class JarvisLive:
             asyncio.run_coroutine_threadsafe(_say(), loop)
         except Exception as e:
             print(f"[PluginSay] {e}")
+
+    # ── Task protection & rollover delivery ───────────────────────────────────
+
+    def _track_task_start(self, name: str, args: dict) -> str:
+        self._task_counter += 1
+        tid = f"task_{self._task_counter}_{name}"
+        self._active_tasks[tid] = {
+            "id": tid,
+            "name": name,
+            "args": args,
+            "start_time": time.time(),
+            "status": "running",
+        }
+        return tid
+
+    def _track_task_done(self, tid: str, result: any, is_rollover: bool = False):
+        task_info = self._active_tasks.pop(tid, None)
+        if task_info:
+            task_info["result"] = result
+            task_info["status"] = "completed"
+            task_info["end_time"] = time.time()
+            if is_rollover:
+                self._pending_task_results.append(task_info)
+
+    async def _deliver_pending_task_results(self):
+        """Deliver background task results that completed during or across a connection rollover."""
+        await asyncio.sleep(1.2)
+        while self.session and not getattr(self, "_shutdown_requested", False):
+            if self._pending_task_results:
+                item = self._pending_task_results.pop(0)
+                name = item.get("name", "Task")
+                raw_res = item.get("result", "Done")
+                if isinstance(raw_res, dict):
+                    res_val = raw_res.get("result") or raw_res.get("output") or raw_res.get("error") or str(raw_res)
+                else:
+                    res_val = str(raw_res)
+                res_preview = str(res_val)[:600]
+                self.ui.write_log(f"SYS: In-flight task '{name}' completed.")
+                try:
+                    await self.session.send_client_content(
+                        turns={"role": "user", "parts": [{
+                            "text": (
+                                f"[SYSTEM NOTIFICATION: IN-FLIGHT TASK FINISHED]\n"
+                                f"Task '{name}' (which was running across a connection rollover) has completed:\n{res_preview}\n"
+                                f"Acknowledge the completed task and relay the outcome naturally to the user."
+                            )
+                        }]},
+                        turn_complete=True,
+                    )
+                except Exception as _err:
+                    print(f"[MARK] Task result delivery deferred: {_err}")
+                    self._pending_task_results.insert(0, item)
+                    break
+            await asyncio.sleep(1.0)
 
     def request_reconnect(self, keep_context: bool = True, reason: str = ""):
         """Thread-safe: ask the run loop to tear down and rebuild the Live
@@ -1194,14 +1265,49 @@ class JarvisLive:
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
                             print(f"[MARK] 📞 {fc.name}")
-                            fr = await self._execute_tool(fc)
-                            fn_responses.append(fr)
-                        await self.session.send_tool_response(
-                            function_responses=fn_responses
-                        )
+                            fc_args = dict(getattr(fc, "args", {}) or {})
+                            tid = self._track_task_start(fc.name, fc_args)
+                            tool_task = asyncio.create_task(self._execute_tool(fc))
+                            try:
+                                fr = await asyncio.shield(tool_task)
+                                self._track_task_done(tid, fr)
+                                fn_responses.append(fr)
+                            except asyncio.CancelledError:
+                                print(f"[MARK] 🛡️ In-flight task '{fc.name}' [{tid}] shielded from disconnection — completing in background.")
+                                self.ui.write_log(f"SYS: In-flight task '{fc.name}' continuing in background...")
+                                async def _bg_waiter(fut, task_id, tool_name):
+                                    try:
+                                        res = await fut
+                                        res_dict = getattr(res, "response", {}) or {"result": str(res)}
+                                        print(f"[MARK] ✅ Background task '{tool_name}' completed!")
+                                        self._track_task_done(task_id, res_dict, is_rollover=True)
+                                    except Exception as _bg_e:
+                                        print(f"[MARK] ⚠️ Background task '{tool_name}' error: {_bg_e}")
+                                        self._track_task_done(task_id, {"error": str(_bg_e)}, is_rollover=True)
+                                asyncio.create_task(_bg_waiter(tool_task, tid, fc.name))
+                                raise
+
+                        if fn_responses and self.session:
+                            try:
+                                await self.session.send_tool_response(
+                                    function_responses=fn_responses
+                                )
+                            except Exception as _tr_err:
+                                print(f"[MARK] ⚠️ send_tool_response failed ({_tr_err}) — saving results for rollover delivery.")
+                                for fr in fn_responses:
+                                    res_dict = getattr(fr, "response", {}) or {"result": str(fr)}
+                                    self._pending_task_results.append({
+                                        "name": getattr(fr, "name", "tool_result"),
+                                        "result": res_dict,
+                                        "is_rollover": True,
+                                    })
+                                raise
         except Exception as e:
-            print(f"[MARK] ❌ Recv: {e}")
-            traceback.print_exc()
+            if _is_goaway_error(e):
+                print("[MARK] 🔄 Session limit reached (1008 GoAway) — seamless rollover in progress...")
+            else:
+                print(f"[MARK] ❌ Recv: {e}")
+                traceback.print_exc()
             raise
 
     async def _play_audio(self):
@@ -1657,8 +1763,12 @@ class JarvisLive:
             try:
                 if getattr(self, "_shutdown_requested", False):
                     break
-                print("[MARK] Connecting...")
-                self.ui.set_state("THINKING")
+                is_rollover = getattr(self, "_is_rollover", False)
+                if not is_rollover:
+                    print("[MARK] Connecting...")
+                    self.ui.set_state("THINKING")
+                else:
+                    print("[MARK] 🔄 Seamless live rollover in progress...")
                 _resumed_with = self._resume_handle is not None
                 config = self._build_config()
 
@@ -1688,26 +1798,31 @@ class JarvisLive:
                     self._interrupted          = False
 
                     print("[MARK] Connected.")
-                    if _resumed_with:
-                        # Say it plainly: the difference between "it reconnected"
-                        # and "it reconnected and still knows what we were doing"
-                        # is the whole point, and it is invisible otherwise.
-                        self.ui.write_log("SYS: Reconnected — conversation restored.")
-
-                    # Wake word: ensure detector is running if enabled.
-                    # Preserve existing awake state across reconnects instead of forcing sleep!
-                    if self._wake_enabled:
-                        self._ensure_wake_detector()
-                        if not self._awake:
-                            self.ui.set_state("SLEEPING")
-                            self.ui.write_log(f"SYS: {self._asst_name} online — sleeping. Say 'Hey Mark' to wake me.")
-                        else:
-                            self.ui.set_state("LISTENING")
-                            self.ui.write_log(f"SYS: {self._asst_name} online — ready.")
-                    else:
-                        self._awake = True
+                    if is_rollover:
+                        self._is_rollover = False
+                        # Seamless rollover: Mark was already awake & active, keep him in current state without intrusive logs
                         self.ui.set_state("LISTENING")
-                        self.ui.write_log(f"SYS: {self._asst_name} online.")
+                    else:
+                        if _resumed_with:
+                            # Say it plainly: the difference between "it reconnected"
+                            # and "it reconnected and still knows what we were doing"
+                            # is the whole point, and it is invisible otherwise.
+                            self.ui.write_log("SYS: Reconnected — conversation restored.")
+
+                        # Wake word: ensure detector is running if enabled.
+                        # Preserve existing awake state across reconnects instead of forcing sleep!
+                        if self._wake_enabled:
+                            self._ensure_wake_detector()
+                            if not self._awake:
+                                self.ui.set_state("SLEEPING")
+                                self.ui.write_log(f"SYS: {self._asst_name} online — sleeping. Say 'Hey Mark' to wake me.")
+                            else:
+                                self.ui.set_state("LISTENING")
+                                self.ui.write_log(f"SYS: {self._asst_name} online — ready.")
+                        else:
+                            self._awake = True
+                            self.ui.set_state("LISTENING")
+                            self.ui.write_log(f"SYS: {self._asst_name} online.")
 
                     if self._dashboard:
                         await self._dashboard.broadcast({"type": "status", "state": "active"})
@@ -1722,6 +1837,7 @@ class JarvisLive:
                     tg.create_task(self._run_background_monitor())
                     tg.create_task(self._run_proactive_mode())
                     tg.create_task(self._run_sleep_watch())
+                    tg.create_task(self._deliver_pending_task_results())
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
 
@@ -1749,6 +1865,13 @@ class JarvisLive:
                         # A deliberate clean slate (voice change) — drop the
                         # handle so the next connect really does start empty.
                         self._resume_handle = None
+                    self._conn_backoff = 0
+                    continue
+
+                # 1008 GoAway (15-minute live session limit reached) — completely seamless rollover!
+                if _is_goaway_error(e):
+                    print("[MARK] 🔄 1008 GoAway received — session rollover seamless & immediate.")
+                    self._is_rollover = True
                     self._conn_backoff = 0
                     continue
 
@@ -1815,8 +1938,8 @@ class JarvisLive:
                     _conn_backoff = 3
             finally:
                 self.session = None
-                # Only save if there was a real conversation (≥3 turns)
-                if not getattr(self, "_shutdown_requested", False) and len(self._session_log) >= 3:
+                # Only save if there was a real conversation (≥3 turns) and NOT rolling over
+                if not getattr(self, "_shutdown_requested", False) and not getattr(self, "_is_rollover", False) and len(self._session_log) >= 3:
                     asyncio.create_task(self._save_session_summary())
 
             self.set_speaking(False)
