@@ -158,9 +158,14 @@ def _resolve_path(raw: str) -> Path:
         "videos":    _get_videos(),
         "home":      Path.home(),
     }
-    lower = raw.strip().lower()
+    raw_str = raw.strip()
+    lower   = raw_str.lower()
     if lower in shortcuts:
         return shortcuts[lower]
+    for prefix, base_dir in shortcuts.items():
+        if lower.startswith(f"{prefix}/") or lower.startswith(f"{prefix}\\"):
+            remainder = raw_str[len(prefix) + 1:].lstrip("/\\")
+            return base_dir / remainder
     return Path(raw).expanduser()
 
 def _format_size(b: int) -> str:

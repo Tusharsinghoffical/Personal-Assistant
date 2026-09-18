@@ -54,22 +54,21 @@ def _gemini_search(query: str) -> str:
 
 def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
     import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS
-
     results = []
     try:
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=max_results):
-                results.append({
-                    "title":   r.get("title",  ""),
-                    "snippet": r.get("body",   ""),
-                    "url":     r.get("href",   ""),
-                })
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=max_results):
+                    results.append({
+                        "title":   r.get("title",  ""),
+                        "snippet": r.get("body",   ""),
+                        "url":     r.get("href",   ""),
+                    })
     except Exception as e:
         print(f"[WebSearch] ⚠️ DDG text failed: {e}")
     return results
@@ -78,23 +77,22 @@ def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
 def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
     """DDG news search — returns actual articles, not website homepages."""
     import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS
-
     results = []
     try:
-        with DDGS() as ddgs:
-            for r in ddgs.news(query, max_results=max_results):
-                results.append({
-                    "title":   r.get("title",  ""),
-                    "snippet": r.get("body",   ""),
-                    "url":     r.get("url",    ""),
-                    "source":  r.get("source", ""),
-                })
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                for r in ddgs.news(query, max_results=max_results):
+                    results.append({
+                        "title":   r.get("title",  ""),
+                        "snippet": r.get("body",   ""),
+                        "url":     r.get("url",    ""),
+                        "source":  r.get("source", ""),
+                    })
     except Exception as e:
         print(f"[WebSearch] ⚠️ DDG news() failed ({e}) — falling back to text search")
         results = _ddg_search(query, max_results=max_results)

@@ -171,15 +171,24 @@ def _build(description, language, output_path, args, timeout, speak=None, player
     return f"{msg}\n\nLast code saved to: {path}"
 
 
-def _write_action(description, language, output_path, player) -> str:
-    if not description:
-        return "Please describe what you want me to write."
+def _write_action(description, language, output_path, player, code: str = "") -> str:
     if player:
         player.write_log("[Code] Writing code...")
     try:
-        code, path = _write(description, language, output_path, player)
+        if code and code.strip():
+            clean_c = clean_code_fences(code.strip())
+            path    = smart_resolve_path(output_path, description, language)
+            ok, msg = safe_save_file(path, clean_c)
+            if not ok:
+                raise IOError(f"Could not persist code to disk: {msg}")
+            print(f"[Code] ✅ Verified on disk: {path}")
+            return f"Code written and verified on disk. Saved to: {path}\n\nPreview:\n{_preview(clean_c)}"
+
+        if not description:
+            return "Please describe what you want me to write."
+        generated_code, path = _write(description, language, output_path, player)
         print(f"[Code] ✅ Verified on disk: {path}")
-        return f"Code written and verified on disk. Saved to: {path}\n\nPreview:\n{_preview(code)}"
+        return f"Code written and verified on disk. Saved to: {path}\n\nPreview:\n{_preview(generated_code)}"
     except Exception as e:
         return f"Could not generate or save code: {e}"
 
@@ -414,8 +423,8 @@ def code_helper(
     action_raw  = p.get("action", "auto")
     description = p.get("description", "").strip()
     language    = p.get("language", "python").strip()
-    output_path = p.get("output_path", "").strip()
-    file_path   = p.get("file_path", "").strip()
+    output_path = (p.get("output_path") or p.get("file_path") or "").strip()
+    file_path   = (p.get("file_path") or p.get("output_path") or "").strip()
     code        = p.get("code", "").strip()
     args        = p.get("args", [])
     timeout     = int(p.get("timeout", 30))
@@ -425,7 +434,7 @@ def code_helper(
     print(f"[Code] 🚀 Action: {action}")
 
     if action == "write":
-        return _write_action(description, language, output_path, player)
+        return _write_action(description, language, output_path, player, code=code)
     elif action == "edit":
         return _edit_action(file_path, description or p.get("instruction", ""), player)
     elif action == "explain":

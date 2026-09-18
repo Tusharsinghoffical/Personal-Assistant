@@ -363,10 +363,15 @@ def _keep_context_of(exc: BaseException) -> bool:
 
 
 def _is_goaway_error(exc: BaseException) -> bool:
-    """True if `exc` is a 1008 GoAway error (session duration limit reached),
+    """True if `exc` is a 1008 GoAway error, keepalive timeout, or session drop,
     or a (Base)ExceptionGroup containing one."""
     err_str = str(exc).lower()
-    if any(k in err_str for k in ("1008", "goaway", "session duration", "failed to close the connection after receiving a goaway")):
+    if any(k in err_str for k in (
+        "1008", "goaway", "session duration",
+        "failed to close the connection after receiving a goaway",
+        "keepalive ping timeout", "timed out while closing connection",
+        "1011 (internal error)", "1011"
+    )):
         return True
     if isinstance(exc, BaseExceptionGroup):
         return any(_is_goaway_error(sub) for sub in exc.exceptions)
@@ -1037,19 +1042,31 @@ class JarvisLive:
         )
 
     async def _send_realtime(self):
-        while True:
-            msg = await self.out_queue.get()
-            # Gemini 3.x Live rejects the old realtime_input.media_chunks field
-            # (what `media=...` maps to) and closes the socket with a 1007. Send
-            # mic / phone PCM through the new `audio` field instead. Queue items
-            # are {"data": <bytes>, "mime_type": <str>} from _listen_audio and
-            # the phone relay.
-            await self.session.send_realtime_input(
-                audio=types.Blob(
-                    data=msg["data"],
-                    mime_type=msg.get("mime_type", "audio/pcm"),
+        try:
+            while True:
+                msg = await self.out_queue.get()
+                if not self.session:
+                    break
+                # Gemini 3.x Live rejects the old realtime_input.media_chunks field
+                # (what `media=...` maps to) and closes the socket with a 1007. Send
+                # mic / phone PCM through the new `audio` field instead. Queue items
+                # are {"data": <bytes>, "mime_type": <str>} from _listen_audio and
+                # the phone relay.
+                await self.session.send_realtime_input(
+                    audio=types.Blob(
+                        data=msg["data"],
+                        mime_type=msg.get("mime_type", "audio/pcm"),
+                    )
                 )
-            )
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        except Exception as e:
+            err_lower = str(e).lower()
+            if _is_goaway_error(e) or any(k in err_lower for k in ("keepalive", "connection closed", "timed out", "1011")):
+                pass
+            else:
+                print(f"[MARK] ⚠️ Send realtime exception: {e}")
+                raise
 
     async def _listen_audio(self):
         print("[MARK] 🎤 Mic started")

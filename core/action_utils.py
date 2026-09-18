@@ -233,7 +233,11 @@ def smart_resolve_path(
     ext = ext_map.get((language or "python").lower(), ".py")
 
     if output_path and output_path.strip():
-        p = Path(output_path.strip())
+        raw_p = output_path.strip()
+        lower_p = raw_p.lower()
+        if lower_p.startswith("desktop/") or lower_p.startswith("desktop\\"):
+            raw_p = raw_p[8:].lstrip("/\\")
+        p = Path(raw_p)
         return p if p.is_absolute() else desktop / p
 
     # Heuristic slug from description
@@ -292,12 +296,7 @@ def safe_save_file(
                     target.write_text(prev_content, encoding="utf-8")
                     return f"Restored previous contents of '{target.name}'."
 
-                push_undo(
-                    description=f"Write {target.name}",
-                    undo_fn=_undo_fn,
-                    category="file",
-                    target=str(target)
-                )
+                push_undo(f"Write {target.name}", _undo_fn)
             except Exception as e:
                 print(f"[ActionUtils] Warning: Undo registration failed: {e}")
 
