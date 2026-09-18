@@ -201,19 +201,37 @@ def _news(query: str) -> str:
     gemini_query = f"latest news today: {query}" if query else "top world news today"
     ddg_query    = query if query else "world news today"
 
+    # Gemini-first (has Google Search grounding — most reliable for news)
     def _try_gemini():
-        return _gemini_search(gemini_query)
-
-    def _try_ddg():
-        res = _ddg_news(ddg_query, max_results=8)
-        return _format_news(ddg_query, res)
-
-    result = _fast_race(_try_gemini, _try_ddg, timeout=4.5)
-    if not result:
         try:
-            result = _try_ddg()
+            return _gemini_search(gemini_query)
         except Exception as e:
-            result = f"News search failed: {e}"
+            print(f"[WebSearch] ⚠️ Gemini news failed: {e}")
+            return ""
+
+    # DDG fallback
+    def _try_ddg():
+        try:
+            res = _ddg_news(ddg_query, max_results=8)
+            formatted = _format_news(ddg_query, res)
+            if not formatted or formatted.startswith("No news"):
+                # Fall back to regular text search if news endpoint fails
+                res2 = _ddg_search(f"{ddg_query} latest news", max_results=6)
+                formatted = _format_ddg(ddg_query, res2)
+            return formatted
+        except Exception as e:
+            print(f"[WebSearch] ⚠️ DDG news failed: {e}")
+            return ""
+
+    result = _fast_race(_try_gemini, _try_ddg, timeout=5.0)
+    if not result:
+        # Last resort: synchronous Gemini attempt
+        try:
+            result = _try_gemini()
+        except Exception:
+            pass
+    if not result:
+        result = f"Could not fetch news for '{query or 'top headlines'}'. Please check your internet connection."
 
     _set_cached(f"news:{query.lower()}", result)
     return result
