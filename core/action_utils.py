@@ -126,15 +126,24 @@ def generate_content_resilient(
         except Exception as e:
             err_msg = str(e).lower()
             last_exc = e
+
+            # Rate limit / quota — same API key, switching model won't help.
+            # Raise immediately so the caller knows to back off.
             if any(sig in err_msg for sig in (
-                "429", "resource_exhausted", "quota",
+                "429", "resource_exhausted", "quota", "rate_limit", "rate limit"
+            )):
+                raise
+
+            # Server-side errors — try next model in the fallback chain.
+            if any(sig in err_msg for sig in (
                 "404", "not_found",
                 "500", "502", "503", "504",
                 "unavailable", "no capacity", "spikes in demand",
                 "high demand", "overloaded", "internal error", "service error"
             )):
-                print(f"[ActionUtils] Model '{model_name}' unavailable ({e}), falling back to next model...")
+                print(f"[ActionUtils] Model '{model_name}' server error ({e}), falling back...")
                 continue
+
             raise
 
     raise last_exc or RuntimeError("All available Gemini flash models failed.")
