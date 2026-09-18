@@ -96,7 +96,12 @@ def generate_content_resilient(
 ) -> str:
     """
     Generates content using the fastest available flash model with automatic
-    fallback on 429 quota limits, 800 capacity limits, or missing models.
+    fallback on:
+      - 429 / resource_exhausted: API quota or rate limit hit
+      - 503 / unavailable:        Server capacity spike (high demand)
+      - 500 / 502 / 504:          Server-side internal error
+      - 404 / not_found:          Model does not exist, skip to next
+      - overloaded / spikes:      Any Google-side capacity signal
     """
     client = get_gemini_client()
     candidates = [preferred_model] + [m for m in FLASH_MODELS_FALLBACK if m != preferred_model]
@@ -122,8 +127,11 @@ def generate_content_resilient(
             err_msg = str(e).lower()
             last_exc = e
             if any(sig in err_msg for sig in (
-                "429", "resource_exhausted", "quota", "404", "not_found",
-                "503", "800", "unavailable", "no capacity", "spikes in demand", "high demand", "overloaded"
+                "429", "resource_exhausted", "quota",
+                "404", "not_found",
+                "500", "502", "503", "504",
+                "unavailable", "no capacity", "spikes in demand",
+                "high demand", "overloaded", "internal error", "service error"
             )):
                 print(f"[ActionUtils] Model '{model_name}' unavailable ({e}), falling back to next model...")
                 continue
