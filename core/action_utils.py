@@ -123,7 +123,7 @@ def generate_content_resilient(
             last_exc = e
             if any(sig in err_msg for sig in (
                 "429", "resource_exhausted", "quota", "404", "not_found",
-                "800", "unavailable", "no capacity", "spikes in demand", "high demand", "overloaded"
+                "503", "800", "unavailable", "no capacity", "spikes in demand", "high demand", "overloaded"
             )):
                 print(f"[ActionUtils] Model '{model_name}' unavailable ({e}), falling back to next model...")
                 continue
