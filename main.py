@@ -1077,6 +1077,18 @@ class JarvisLive:
         print("[MARK] 🎤 Mic started")
         loop = asyncio.get_event_loop()
 
+        def _safe_put_audio(item):
+            if not self.out_queue:
+                return
+            try:
+                self.out_queue.put_nowait(item)
+            except asyncio.QueueFull:
+                try:
+                    self.out_queue.get_nowait()
+                    self.out_queue.put_nowait(item)
+                except Exception:
+                    pass
+
         def callback(indata, frames, time_info, status):
             # ── Wake-word gate ───────────────────────────────────────────────
             # While asleep, the mic audio NEVER goes to Gemini (nothing is
@@ -1095,7 +1107,7 @@ class JarvisLive:
             if not jarvis_speaking and not self.ui.muted and not self._phone_active:
                 data = indata.tobytes()
                 loop.call_soon_threadsafe(
-                    self.out_queue.put_nowait,
+                    _safe_put_audio,
                     {"data": data, "mime_type": "audio/pcm"}
                 )
                 # Feed the live mic level to the HUD so the waveform reacts to

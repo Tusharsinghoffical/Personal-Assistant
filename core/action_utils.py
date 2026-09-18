@@ -29,7 +29,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 _OS = platform.system()
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
 
 # Cached globals
 _CACHED_BASE_DIR: Optional[Path] = None
@@ -79,12 +79,12 @@ def load_api_config() -> dict[str, Any]:
         return _CACHED_CONFIG or {}
 
 
-DEFAULT_FLASH_MODEL = "gemini-2.5-flash"
+DEFAULT_FLASH_MODEL = "gemini-3.1-flash-lite"
 FLASH_MODELS_FALLBACK = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
     "gemini-3.1-flash-lite",
-    "gemini-2.0-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-flash-lite-latest",
     "gemini-flash-latest",
 ]
 
@@ -172,7 +172,7 @@ def get_gemini_client():
         api_key = get_api_key("gemini")
         if not api_key:
             raise ValueError("Gemini API key is not configured in config/api_keys.json.")
-        _CACHED_GEMINI_CLIENT = genai.Client(api_key=api_key)
+        _CACHED_GEMINI_CLIENT = genai.Client(api_key=api_key, http_options={"timeout": 20000})
         return _CACHED_GEMINI_CLIENT
 
 

@@ -10,6 +10,7 @@ from core.action_utils import (
     get_base_dir,
     get_desktop_dir,
     get_gemini_client,
+    generate_content_resilient,
     clean_code_fences,
     safe_save_file,
     safe_read_file,
@@ -19,16 +20,19 @@ from core.action_utils import (
 BASE_DIR         = get_base_dir()
 PROJECTS_DIR     = get_desktop_dir() / "MarkProjects"
 MAX_FIX_ATTEMPTS = 5
-MODEL_PLANNER    = "gemini-flash-latest"
-MODEL_WRITER     = "gemini-flash-latest"
+MODEL_PLANNER    = "gemini-3.1-flash-lite"
+MODEL_WRITER     = "gemini-3.1-flash-lite"
 
 
 def _get_model(model_name: str = MODEL_PLANNER):
-    client = get_gemini_client()
+    class _Resp:
+        def __init__(self, text: str):
+            self.text = text
 
     class _W:
         def generate_content(self, contents):
-            return client.models.generate_content(model=model_name, contents=contents)
+            res_text = generate_content_resilient(contents, preferred_model=model_name)
+            return _Resp(res_text)
 
     return _W()
 
