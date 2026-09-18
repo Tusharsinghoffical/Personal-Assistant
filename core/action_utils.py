@@ -79,12 +79,13 @@ def load_api_config() -> dict[str, Any]:
         return _CACHED_CONFIG or {}
 
 
-DEFAULT_FLASH_MODEL = "gemini-3.1-flash-lite"
+DEFAULT_FLASH_MODEL = "gemini-2.5-flash"
 FLASH_MODELS_FALLBACK = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
     "gemini-3.1-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-3.6-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-flash-latest",
 ]
 
 
@@ -95,7 +96,7 @@ def generate_content_resilient(
 ) -> str:
     """
     Generates content using the fastest available flash model with automatic
-    fallback on 429 quota limits or missing models.
+    fallback on 429 quota limits, 800 capacity limits, or missing models.
     """
     client = get_gemini_client()
     candidates = [preferred_model] + [m for m in FLASH_MODELS_FALLBACK if m != preferred_model]
@@ -120,8 +121,11 @@ def generate_content_resilient(
         except Exception as e:
             err_msg = str(e).lower()
             last_exc = e
-            if any(sig in err_msg for sig in ("429", "resource_exhausted", "quota", "404", "not_found")):
-                print(f"[ActionUtils] Model '{model_name}' hit limit ({e}), falling back to next model...")
+            if any(sig in err_msg for sig in (
+                "429", "resource_exhausted", "quota", "404", "not_found",
+                "800", "unavailable", "no capacity", "spikes in demand", "high demand", "overloaded"
+            )):
+                print(f"[ActionUtils] Model '{model_name}' unavailable ({e}), falling back to next model...")
                 continue
             raise
 

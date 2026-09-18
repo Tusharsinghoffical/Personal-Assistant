@@ -33,10 +33,12 @@ def _set_cached(key: str, val: str) -> None:
         _CACHE[key] = (now, val)
 
 
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
 def _gemini_search(query: str) -> str:
-    client   = get_gemini_client()
-    response = client.models.generate_content(
-        model="gemini-flash-latest",
+    from core.action_utils import generate_content_resilient
+    response = generate_content_resilient(
         contents=query,
         config={"tools": [{"google_search": {}}]},
     )
@@ -53,11 +55,10 @@ def _gemini_search(query: str) -> str:
 
 
 def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
-    import warnings
     results = []
     try:
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
+            warnings.simplefilter("ignore")
             try:
                 from ddgs import DDGS
             except ImportError:

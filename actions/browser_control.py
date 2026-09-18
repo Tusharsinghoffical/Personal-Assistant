@@ -193,6 +193,15 @@ def _find_opera_windows() -> Optional[str]:
     return shutil.which("opera") or None
 
 def _find_exe_windows(prog_name: str) -> Optional[str]:
+    if prog_name == "chrome":
+        known = [
+            Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
+            Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        ]
+        for p in known:
+            if p.exists():
+                return str(p)
     try:
         import winreg
         paths_to_try = [
@@ -309,47 +318,15 @@ def _resolve_browser(name: str) -> dict | None:
 
 
 def _detect_default_browser() -> str:
-    try:
-        if _OS == "Windows":
-            import winreg
-            k = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\Shell\Associations"
-                r"\UrlAssociations\http\UserChoice",
-            )
-            prog_id = winreg.QueryValueEx(k, "ProgId")[0].lower()
-            winreg.CloseKey(k)
-            for kw in ("edge", "firefox", "opera", "brave", "vivaldi", "chrome"):
-                if kw in prog_id:
-                    return kw
-        elif _OS == "Darwin":
-            out = subprocess.run(
-                ["defaults", "read",
-                 "com.apple.LaunchServices/com.apple.launchservices.secure",
-                 "LSHandlers"],
-                capture_output=True, text=True, timeout=5,
-            ).stdout.lower()
-            for kw in ("firefox", "opera", "brave", "vivaldi", "safari", "chrome", "edge"):
-                if kw in out:
-                    return kw
-        elif _OS == "Linux":
-            out = subprocess.run(
-                ["xdg-settings", "get", "default-web-browser"],
-                capture_output=True, text=True, timeout=5,
-            ).stdout.lower()
-            for kw in ("firefox", "opera", "brave", "vivaldi", "chrome", "edge"):
-                if kw in out:
-                    return kw
-    except Exception:
-        pass
+    # Strictly Chrome as default browser
     return "chrome"
 
 
 _SEARCH_ENGINES: dict[str, str] = {
     "google":     "https://www.google.com/search?q=",
-    "bing":       "https://www.bing.com/search?q=",
-    "duckduckgo": "https://duckduckgo.com/?q=",
-    "yandex":     "https://yandex.com/search/?text=",
+    "bing":       "https://www.google.com/search?q=",
+    "duckduckgo": "https://www.google.com/search?q=",
+    "yandex":     "https://www.google.com/search?q=",
 }
 
 _MAC_APP_NAMES: dict[str, str] = {
@@ -375,17 +352,16 @@ def _open_native(url: str, browser_name: Optional[str]) -> str:
     If url is empty the browser starts with no URL (its own start page /
     session restore) — exactly as if the user had opened it themselves.
     Works on all three of Windows / macOS / Linux.
+    Defaults strictly to Google Chrome.
     """
     url = _normalize_url(url) if url and url.strip() else ""
     if url == "about:blank":
         url = ""
 
-    name = None
     if browser_name:
         name = _ALIASES.get(browser_name.lower().strip(), browser_name.lower().strip())
-    elif not url:
-        # No URL → only a window will open; needs the default browser's exe
-        name = _detect_default_browser()
+    else:
+        name = "chrome"
 
     # Specific browser → launch its own executable, exactly like the user would.
     if name:
@@ -419,6 +395,16 @@ def _open_native(url: str, browser_name: Optional[str]) -> str:
 
     if not url:
         return "Could not find a browser to open."
+
+    # Try Chrome directly on Windows before OS startfile fallback
+    if _OS == "Windows":
+        chrome_exe = _find_exe_windows("chrome")
+        if chrome_exe:
+            try:
+                subprocess.Popen([chrome_exe, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return f"Opened in Chrome: {url}"
+            except Exception:
+                pass
 
     # Default browser via the OS — exactly like the user clicking a link.
     try:

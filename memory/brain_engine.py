@@ -446,29 +446,39 @@ def search(
 
         score = 0
         if clean_query:
+            matched = False
             if clean_query == topic_lower:
-                score += 60
+                score += 80
+                matched = True
             elif clean_query in topic_lower:
-                score += 35
+                score += 45
+                matched = True
             elif clean_query in content_lower:
-                score += 25
+                score += 30
+                matched = True
 
             for token in query_tokens:
+                if len(token) < 2:
+                    continue
                 if token == topic_lower:
-                    score += 20
+                    score += 30
+                    matched = True
                 elif token in topic_lower:
-                    score += 12
+                    score += 18
+                    matched = True
                 if token in tags:
-                    score += 10
+                    score += 15
+                    matched = True
                 if token in content_lower:
-                    score += 6
+                    score += 10
+                    matched = True
 
-            score += m.get("importance", 3) * 3
-            score += min(m.get("reinforcement_count", 1), 10) * 4
+            if matched:
+                score += m.get("importance", 3) * 3
+                score += min(m.get("reinforcement_count", 1), 10) * 4
+                results.append((score, m))
         else:
             score = m.get("importance", 3) + m.get("reinforcement_count", 1)
-
-        if score > 0 or not clean_query:
             results.append((score, m))
 
     # Optionally search commands history

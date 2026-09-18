@@ -94,6 +94,10 @@ BASE_DIR        = get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
 LIVE_MODEL          = "models/gemini-3.1-flash-live-preview"
+LIVE_MODELS_FALLBACK = [
+    "models/gemini-3.1-flash-live-preview",
+    "models/gemini-2.0-flash-exp",
+]
 CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000 
 RECEIVE_SAMPLE_RATE = 24000
@@ -457,6 +461,7 @@ class JarvisLive:
         self._pending_task_results: list[dict] = []
         self._task_counter: int = 0
         self._is_rollover: bool = False
+        self._live_model_idx: int = 0
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
@@ -1797,8 +1802,9 @@ class JarvisLive:
                     http_options={"api_version": "v1alpha" if self._enhanced_live else "v1beta"}
                 )
 
+                active_live_model = LIVE_MODELS_FALLBACK[self._live_model_idx % len(LIVE_MODELS_FALLBACK)]
                 async with (
-                    client.aio.live.connect(model=LIVE_MODEL, config=config) as session,
+                    client.aio.live.connect(model=active_live_model, config=config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
                     self.session          = session
@@ -1813,8 +1819,9 @@ class JarvisLive:
                     self._vision_busy          = False
                     self._vision_last_time     = 0.0
                     self._interrupted          = False
+                    self._live_model_idx       = 0
 
-                    print("[MARK] Connected.")
+                    print(f"[MARK] Connected ({active_live_model}).")
                     if is_rollover:
                         self._is_rollover = False
                         # Seamless rollover: Mark was already awake & active, keep him in current state without intrusive logs
@@ -1937,6 +1944,16 @@ class JarvisLive:
                         await asyncio.sleep(1)
                     print("[MARK] New API key saved — reconnecting...")
                     _conn_backoff = 3
+                    continue
+                # Google server capacity spike / 503 UNAVAILABLE — fallback live model
+                is_capacity_err = any(k in err_str for k in ("503", "UNAVAILABLE", "No capacity", "high demand", "overloaded"))
+                if is_capacity_err:
+                    self._live_model_idx += 1
+                    fallback_model = LIVE_MODELS_FALLBACK[self._live_model_idx % len(LIVE_MODELS_FALLBACK)]
+                    self._resume_handle = None
+                    self._conn_backoff = min(getattr(self, "_conn_backoff", 3) + 2, 15)
+                    print(f"[MARK] ⚠️ Server capacity spike (503) — falling back to {fallback_model} (retrying in {self._conn_backoff}s)...")
+                    self.ui.write_log(f"SYS: Server high demand (503) — retrying with {fallback_model} in {self._conn_backoff}s...")
                     continue
 
                 # Network / timeout errors — log clearly and back off

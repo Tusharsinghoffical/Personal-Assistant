@@ -647,8 +647,9 @@ def file_controller(
 ) -> str:
     params = parameters or {}
     action = params.get("action", "").lower().strip()
-    path   = params.get("path", "desktop")
-    name   = params.get("name", "")
+    path   = params.get("path") or params.get("file_path") or params.get("output_path") or params.get("target_path") or params.get("filepath") or "desktop"
+    name   = params.get("name") or params.get("filename") or ""
+    content = params.get("content") or params.get("text") or params.get("code") or params.get("data") or params.get("body") or ""
 
     if player:
         player.write_log(f"[file] {action} {name or path}")
@@ -657,8 +658,8 @@ def file_controller(
         if action == "list":
             return list_files(path)
 
-        elif action == "create_file":
-            return create_file(path, name=name, content=params.get("content", ""))
+        elif action in ("create_file", "save", "save_file", "new_file"):
+            return create_file(path, name=name, content=content)
 
         elif action == "create_folder":
             return create_folder(path, name=name)
@@ -678,10 +679,10 @@ def file_controller(
         elif action == "read":
             return read_file(path, name=name)
 
-        elif action == "write":
+        elif action in ("write", "write_file"):
             return write_file(
                 path, name=name,
-                content=params.get("content", ""),
+                content=content,
                 append=params.get("append", False)
             )
 
