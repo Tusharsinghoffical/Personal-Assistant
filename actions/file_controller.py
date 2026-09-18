@@ -228,9 +228,11 @@ def create_file(path: str, name: str = "", content: str = "") -> str:
             except Exception:
                 previous = None
         target.write_text(content, encoding="utf-8")
+        if not target.exists():
+            return f"File verification failed: {target}"
         push_undo(f"created {target.name}",
                   _undo_write(target, previous) if existed else _undo_create(target))
-        return f"File created: {target.name}"
+        return f"File created and verified on disk: {target.name} at {target}"
     except Exception as e:
         return f"Could not create file: {e}"
 
@@ -429,8 +431,8 @@ def write_file(path: str, name: str = "", content: str = "",
         action = "Appended to" if append else "Written to"
         if undoable:
             push_undo(f"wrote to {target.name}", _undo_write(target, previous))
-            return f"{action}: {target.name}"
-        return (f"{action}: {target.name}. "
+            return f"{action} and verified on disk: {target.name} at {target}"
+        return (f"{action} and verified on disk: {target.name} at {target}. "
                 f"(Too large to keep a copy of the old contents, so this one "
                 f"cannot be undone.)")
     except Exception as e:

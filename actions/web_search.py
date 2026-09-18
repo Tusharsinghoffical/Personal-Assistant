@@ -1,27 +1,40 @@
-#web_search.py
-import json
-import sys
+# web_search.py — High-speed web search & information gathering for Mark LIII
+import re
+import threading
+import time
 from pathlib import Path
 
-def _get_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
+from core.action_utils import get_base_dir, get_gemini_client
+
+BASE_DIR = get_base_dir()
+
+# In-memory query cache with TTL (5 minutes)
+_CACHE_LOCK = threading.Lock()
+_CACHE: dict[str, tuple[float, str]] = {}
+_CACHE_TTL = 300.0  # 5 minutes
 
 
-BASE_DIR        = _get_base_dir()
-API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
+def _get_cached(key: str) -> str | None:
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        if key in _CACHE:
+            ts, val = _CACHE[key]
+            if now - ts < _CACHE_TTL:
+                return val
+            del _CACHE[key]
+    return None
 
 
-def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+def _set_cached(key: str, val: str) -> None:
+    if not val or len(val.strip()) < 10:
+        return
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        _CACHE[key] = (now, val)
 
 
 def _gemini_search(query: str) -> str:
-    from google import genai
-
-    client   = genai.Client(api_key=_get_api_key())
+    client   = get_gemini_client()
     response = client.models.generate_content(
         model="gemini-flash-latest",
         contents=query,
@@ -49,13 +62,16 @@ def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
             from duckduckgo_search import DDGS
 
     results = []
-    with DDGS() as ddgs:
-        for r in ddgs.text(query, max_results=max_results):
-            results.append({
-                "title":   r.get("title",  ""),
-                "snippet": r.get("body",   ""),
-                "url":     r.get("href",   ""),
-            })
+    try:
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=max_results):
+                results.append({
+                    "title":   r.get("title",  ""),
+                    "snippet": r.get("body",   ""),
+                    "url":     r.get("href",   ""),
+                })
+    except Exception as e:
+        print(f"[WebSearch] ⚠️ DDG text failed: {e}")
     return results
 
 
@@ -117,166 +133,169 @@ def _format_news(query: str, results: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 
-# ── Briefing helper ────────────────────────────────────────────────────────────
-
-def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
+def _fast_race(primary_fn, fallback_fn, timeout: float = 4.5) -> str:
     """
-    Fetches current headlines via Gemini grounded search.
-    Optimised for speed: minimal prompt + strict token cap.
-    Returns (headline_list, raw_text_for_display).
+    Races primary (e.g. Gemini) against fallback (e.g. DDG) with a quick timeout.
+    Returns whichever delivers valid data first, ensuring zero long freezes.
     """
-    import re
-    from google import genai
+    box = [None]
+    lock = threading.Lock()
+    done = threading.Event()
 
-    client = genai.Client(api_key=_get_api_key())
-    response = client.models.generate_content(
-        model="gemini-flash-latest",
-        contents=f"Current world news: {n} headlines. Numbered list, titles only.",
-        config={"tools": [{"google_search": {}}]},
-    )
+    def _worker(fn):
+        try:
+            res = fn()
+            if res and len(res.strip()) > 40:
+                with lock:
+                    if box[0] is None:
+                        box[0] = res
+                done.set()
+        except Exception:
+            pass
 
-    raw = ""
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, "text") and part.text:
-            raw += part.text
+    t1 = threading.Thread(target=_worker, args=(primary_fn,), daemon=True)
+    t2 = threading.Thread(target=_worker, args=(fallback_fn,), daemon=True)
+    t1.start()
+    t2.start()
 
-    headlines = []
-    for line in raw.strip().split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        # Only accept lines that begin with a number — skips preamble/closing sentences
-        if not re.match(r'^[\d]+[.\)\-]', line):
-            continue
-        clean = re.sub(r'^[\d]+[.\)\-]\s*', '', line)
-        clean = re.sub(r'^\*+\s*',          '', clean).strip()
-        if clean and len(clean) > 10:
-            headlines.append(clean)
+    done.wait(timeout=timeout)
+    if box[0] is not None:
+        return box[0]
 
-    return headlines[:n], raw.strip()
+    # If neither finished within timeout, give one final 2s grace to either
+    done.wait(timeout=2.0)
+    return box[0] or ""
 
 
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
 def _search(query: str) -> str:
-    """Default search — Gemini grounded, DDG fallback."""
-    try:
+    cached = _get_cached(f"search:{query.lower()}")
+    if cached:
+        return cached
+
+    def _try_gemini():
         return _gemini_search(query)
-    except Exception as e:
-        print(f"[WebSearch] ⚠️ Gemini failed ({e}) — trying DDG...")
-        results = _ddg_search(query)
-        return _format_ddg(query, results)
+
+    def _try_ddg():
+        res = _ddg_search(query, max_results=6)
+        return _format_ddg(query, res)
+
+    # Fast race with 4.5s threshold
+    result = _fast_race(_try_gemini, _try_ddg, timeout=4.5)
+    if not result:
+        # Final synchronous fallback attempt
+        try:
+            result = _try_ddg()
+        except Exception as e:
+            result = f"Search failed: {e}"
+
+    _set_cached(f"search:{query.lower()}", result)
+    return result
 
 
 def _news(query: str) -> str:
-    """
-    Runs Gemini grounded search AND DDG news in parallel.
-    Returns whichever delivers a valid result first; cancels the other.
-    """
-    import threading
+    cached = _get_cached(f"news:{query.lower()}")
+    if cached:
+        return cached
 
     gemini_query = f"latest news today: {query}" if query else "top world news today"
     ddg_query    = query if query else "world news today"
 
-    result_box  = [None]   # first valid result lands here
-    lock        = threading.Lock()
-    done_evt    = threading.Event()
-    failures    = [0]
-
-    def _store(r: str) -> None:
-        if r and len(r) > 60:
-            with lock:
-                if result_box[0] is None:
-                    result_box[0] = r
-            done_evt.set()
-        else:
-            with lock:
-                failures[0] += 1
-                if failures[0] >= 2:   # both failed — unblock caller
-                    done_evt.set()
-
     def _try_gemini():
-        try:
-            _store(_gemini_search(gemini_query))
-        except Exception as e:
-            print(f"[WebSearch] ⚠️ Gemini news failed ({e})")
-            _store("")
+        return _gemini_search(gemini_query)
 
     def _try_ddg():
+        res = _ddg_news(ddg_query, max_results=8)
+        return _format_news(ddg_query, res)
+
+    result = _fast_race(_try_gemini, _try_ddg, timeout=4.5)
+    if not result:
         try:
-            results = _ddg_news(ddg_query, max_results=8)
-            _store(_format_news(ddg_query, results))
+            result = _try_ddg()
         except Exception as e:
-            print(f"[WebSearch] ⚠️ DDG news failed ({e})")
-            _store("")
+            result = f"News search failed: {e}"
 
-    threading.Thread(target=_try_gemini, daemon=True).start()
-    threading.Thread(target=_try_ddg,    daemon=True).start()
-
-    done_evt.wait(timeout=10.0)
-    return result_box[0] or f"No news found for: {query}"
+    _set_cached(f"news:{query.lower()}", result)
+    return result
 
 
 def _research(query: str) -> str:
-    """
-    Deep dive — asks Gemini for a comprehensive answer with context.
-    Falls back to a wider DDG fetch.
-    """
+    cached = _get_cached(f"research:{query.lower()}")
+    if cached:
+        return cached
+
     research_query = (
         f"Comprehensive, detailed explanation of: {query}. "
         "Include background context, key facts, current state, and important nuances."
     )
     try:
-        return _gemini_search(research_query)
+        res = _gemini_search(research_query)
     except Exception as e:
         print(f"[WebSearch] ⚠️ Research Gemini failed ({e}) — DDG fallback...")
         results = _ddg_search(query, max_results=10)
-        return _format_ddg(query, results)
+        res = _format_ddg(query, results)
+
+    _set_cached(f"research:{query.lower()}", res)
+    return res
 
 
 def _price(query: str) -> str:
-    """Product price lookup — searches for current market prices."""
+    cached = _get_cached(f"price:{query.lower()}")
+    if cached:
+        return cached
+
     price_query = f"current price of {query} — how much does it cost today"
     try:
-        return _gemini_search(price_query)
+        res = _gemini_search(price_query)
     except Exception as e:
         print(f"[WebSearch] ⚠️ Price Gemini failed ({e}) — DDG fallback...")
         results = _ddg_search(f"{query} price buy", max_results=6)
-        return _format_ddg(query, results)
+        res = _format_ddg(query, results)
+
+    _set_cached(f"price:{query.lower()}", res)
+    return res
 
 
 def _compare(items: list[str], aspect: str) -> str:
+    cache_key = f"compare:{':'.join(sorted(items))}:{aspect.lower()}"
+    cached = _get_cached(cache_key)
+    if cached:
+        return cached
+
     query = (
         f"Compare {', '.join(items)} in terms of {aspect}. "
         "Give specific facts and data."
     )
     try:
-        return _gemini_search(query)
+        res = _gemini_search(query)
     except Exception as e:
         print(f"[WebSearch] ⚠️ Gemini compare failed: {e} — falling back to DDG")
+        all_results: dict[str, list] = {}
+        for item in items:
+            try:
+                all_results[item] = _ddg_search(f"{item} {aspect}", max_results=3)
+            except Exception:
+                all_results[item] = []
 
-    all_results: dict[str, list] = {}
-    for item in items:
-        try:
-            all_results[item] = _ddg_search(f"{item} {aspect}", max_results=3)
-        except Exception:
-            all_results[item] = []
+        lines = [f"Comparison — {aspect.upper()}", "─" * 40]
+        for item in items:
+            lines.append(f"\n▸ {item}")
+            for r in all_results.get(item, [])[:2]:
+                if r.get("snippet"):
+                    lines.append(f"  • {r['snippet']}")
+                if r.get("url"):
+                    lines.append(f"    {r['url']}")
+        res = "\n".join(lines)
 
-    lines = [f"Comparison — {aspect.upper()}", "─" * 40]
-    for item in items:
-        lines.append(f"\n▸ {item}")
-        for r in all_results.get(item, [])[:2]:
-            if r.get("snippet"):
-                lines.append(f"  • {r['snippet']}")
-            if r.get("url"):
-                lines.append(f"    {r['url']}")
-    return "\n".join(lines)
+    _set_cached(cache_key, res)
+    return res
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
 
 def web_search(
-    parameters:     dict,
+    parameters: dict,
     response=None,
     player=None,
     session_memory=None,
@@ -317,7 +336,7 @@ def web_search(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "web_search",
-    "description": "Searches the web. Use for ANY question about current facts, events, prices, or topics — always prefer this over guessing. Modes: 'search' (default), 'news' (latest headlines on a topic), 'research' (deep comprehensive answer), 'price' (product cost lookup), 'compare' (side-by-side comparison of items).",
+    "description": "Searches the web quickly. Use for ANY question about current facts, events, prices, or information. Modes: 'search' (default), 'news' (latest headlines), 'research' (deep comprehensive answer), 'price' (product cost lookup), 'compare' (side-by-side comparison).",
     "parameters": {
         "type": "OBJECT",
         "properties": {

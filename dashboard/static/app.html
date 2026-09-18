@@ -486,27 +486,286 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* ── MEDIA PERMISSION GATEWAY ── */
+    #media-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: radial-gradient(circle at center, #101426 0%, #07090f 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s;
+    }
+
+    #media-gate.gate-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .gate-card {
+      width: 100%;
+      max-width: 440px;
+      background: rgba(14, 18, 32, 0.9);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.7), 0 0 35px rgba(99, 102, 241, 0.2);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 34px 28px;
+      text-align: center;
+      position: relative;
+    }
+
+    .gate-reactor {
+      width: 68px;
+      height: 68px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      border: 2px solid #6366f1;
+      box-shadow: 0 0 25px rgba(99, 102, 241, 0.6), inset 0 0 15px rgba(99, 102, 241, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      animation: gate-pulse 2.2s infinite alternate ease-in-out;
+    }
+
+    @keyframes gate-pulse {
+      0% {
+        transform: scale(0.96);
+        box-shadow: 0 0 18px rgba(99, 102, 241, 0.45);
+      }
+      100% {
+        transform: scale(1.04);
+        box-shadow: 0 0 32px rgba(99, 102, 241, 0.85), 0 0 10px rgba(34, 197, 94, 0.6);
+      }
+    }
+
+    .gate-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #e2e8f0;
+      margin-bottom: 8px;
+    }
+
+    .gate-subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.55;
+      margin-bottom: 24px;
+    }
+
+    .gate-perms {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .gate-perm-box {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 16px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.3s;
+    }
+
+    .gate-perm-box.active {
+      border-color: rgba(34, 197, 94, 0.5);
+      background: rgba(34, 197, 94, 0.09);
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.15);
+    }
+
+    .gate-perm-icon {
+      font-size: 24px;
+      margin-bottom: 2px;
+    }
+
+    .gate-perm-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #cbd5e1;
+    }
+
+    .gate-perm-status {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .gate-perm-box.active .gate-perm-status {
+      color: var(--green);
+    }
+
+    .gate-btn-main {
+      width: 100%;
+      padding: 14px 18px;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      border: none;
+      border-radius: 14px;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+      transition: all 0.2s;
+    }
+
+    .gate-btn-main:hover {
+      opacity: 0.94;
+      transform: translateY(-1px);
+      box-shadow: 0 8px 25px rgba(99, 102, 241, 0.6);
+    }
+
+    .gate-btn-main:active {
+      transform: translateY(1px);
+    }
+
+    .gate-btn-main.granted {
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+    }
+
+    .gate-status-msg {
+      margin-top: 14px;
+      font-size: 12px;
+      min-height: 20px;
+      color: #94a3b8;
+    }
+
+    .gate-status-msg.err {
+      color: #f87171;
+    }
+
+    .gate-status-msg.ok {
+      color: #22c55e;
+      font-weight: 600;
+    }
+
+    .gate-btn-sec {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border-radius: 12px;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: #a5b4fc;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      display: none;
+      transition: all 0.2s;
+    }
+
+    .gate-btn-sec:hover {
+      background: rgba(99, 102, 241, 0.25);
+      color: #fff;
+    }
+
+    .gate-skip-btn {
+      display: none;
+      background: transparent;
+      border: none;
+      color: #64748b;
+      font-size: 11px;
+      margin-top: 14px;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .gate-skip-btn:hover {
+      color: #cbd5e1;
+    }
+
+    /* ── DASHBOARD APP SHELL ── */
+    #app-shell {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      opacity: 0;
+      transform: scale(0.985);
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #app-shell.app-visible {
+      opacity: 1;
+      transform: scale(1);
+    }
   </style>
 </head>
 
 <body>
+  <!-- Permission Gateway Overlay -->
+  <div id="media-gate">
+    <div class="gate-card">
+      <div class="gate-reactor">⚡</div>
+      <div class="gate-title">Mark Authorization</div>
+      <div class="gate-subtitle">
+        Microphone and Camera access are requested to initialize voice input and live vision telemetry.
+      </div>
+      <div class="gate-perms">
+        <div class="gate-perm-box" id="perm-mic">
+          <div class="gate-perm-icon">🎙️</div>
+          <div class="gate-perm-label">Microphone</div>
+          <div class="gate-perm-status" id="perm-mic-st">Pending</div>
+        </div>
+        <div class="gate-perm-box" id="perm-cam">
+          <div class="gate-perm-icon">📷</div>
+          <div class="gate-perm-label">Camera</div>
+          <div class="gate-perm-status" id="perm-cam-st">Pending</div>
+        </div>
+      </div>
+      <button class="gate-btn-main" id="gate-btn" onclick="handleGateAction()">
+        ALLOW CAMERA & MIC
+      </button>
+      <button class="gate-btn-sec" id="gate-btn-sec" onclick="switchToHttps()">
+        🔒 SWITCH TO HTTPS (ENABLES CAM/MIC)
+      </button>
+      <div class="gate-status-msg" id="gate-status">Waiting for user permission…</div>
+      <button class="gate-skip-btn" id="gate-skip" onclick="unlockDashboard()">
+        Continue to Dashboard without Media
+      </button>
+    </div>
+  </div>
+
   <div id="toast"></div>
-  <header>
-    <div class="logo"><em>M</em>ARK</div>
-    <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
-    <div class="enc-badge" id="enc">AES-256</div>
-    <div class="spacer"></div>
-    <div class="url">__IP__:__PORT__</div>
-  </header>
-  <main id="feed"></main>
-  <footer>
-    <input id="inp" placeholder="Send a command to Mark…" autocomplete="off">
-    <label class="btn-attach" for="file-inp" title="Send file">📎</label>
-    <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
-    <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
-  </footer>
+
+  <!-- Main Dashboard App Shell -->
+  <div id="app-shell">
+    <header>
+      <div class="logo"><em>M</em>ARK</div>
+      <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
+      <div class="enc-badge" id="enc">AES-256</div>
+      <div class="spacer"></div>
+      <div class="url">__IP__:__PORT__</div>
+    </header>
+    <main id="feed"></main>
+    <footer>
+      <input id="inp" placeholder="Send a command to Mark…" autocomplete="off">
+      <label class="btn-attach" for="file-inp" title="Send file">📎</label>
+      <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
+      <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
+      <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
+      <button class="btn btn-send" onclick="doSend()">SEND</button>
+    </footer>
+  </div>
 
   <script>
     // ── Auth — bearer token ───────────────────────────────────────────────────
@@ -910,6 +1169,152 @@
       }
       _micIdle();
     }
+
+    // ── Pre-launch Camera & Microphone Authorization Gateway ──────────────────
+    let _dashboardUnlocked = false;
+    let _gateAction = 'request';
+
+    function handleGateAction() {
+      if (_gateAction === 'unlock') {
+        unlockDashboard();
+      } else {
+        requestMediaPermissions();
+      }
+    }
+
+    function switchToHttps() {
+      const u = new URL(window.location.href);
+      u.protocol = 'https:';
+      window.location.href = u.toString();
+    }
+
+    async function requestMediaPermissions() {
+      const statusEl = document.getElementById('gate-status');
+      const micBox   = document.getElementById('perm-mic');
+      const camBox   = document.getElementById('perm-cam');
+      const micSt    = document.getElementById('perm-mic-st');
+      const camSt    = document.getElementById('perm-cam-st');
+      const btn      = document.getElementById('gate-btn');
+      const btnSec   = document.getElementById('gate-btn-sec');
+      const skipBtn  = document.getElementById('gate-skip');
+
+      // Check if browser blocks media due to insecure context (e.g. mobile Chrome over HTTP IP)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const isHttpLan = window.location.protocol === 'http:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+        if (isHttpLan) {
+          statusEl.className = 'gate-status-msg';
+          statusEl.innerHTML = '<span style="color:#f59e0b;font-weight:600">⚠️ Notice: Mobile browsers block Camera & Mic over plain HTTP.</span><br><span style="font-size:11px;color:#94a3b8;display:inline-block;margin-top:4px">Tap <b>Enter Dashboard</b> to proceed, or switch to HTTPS.</span>';
+          btn.textContent = '⚡ ENTER DASHBOARD';
+          btn.style.background = 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)';
+          _gateAction = 'unlock';
+          if (btnSec) {
+            btnSec.style.display = 'block';
+          }
+          if (micSt) micSt.textContent = 'HTTP Limited';
+          if (camSt) camSt.textContent = 'HTTP Limited';
+        } else {
+          statusEl.className = 'gate-status-msg err';
+          statusEl.textContent = 'MediaDevices not supported in this browser context.';
+          btn.textContent = '⚡ ENTER DASHBOARD';
+          _gateAction = 'unlock';
+        }
+        skipBtn.style.display = 'inline-block';
+        return;
+      }
+
+      statusEl.className = 'gate-status-msg';
+      statusEl.textContent = 'Please click "Allow" on your browser permission prompt…';
+      btn.textContent = 'REQUESTING ACCESS…';
+      _gateAction = 'request';
+
+      try {
+        // Request both microphone and camera access together
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+          video: { facingMode: 'user' }
+        });
+
+        // Mark UI as granted
+        if (micBox) micBox.classList.add('active');
+        if (camBox) camBox.classList.add('active');
+        if (micSt) { micSt.textContent = '✓ Granted'; micSt.style.color = '#22c55e'; }
+        if (camSt) { camSt.textContent = '✓ Granted'; camSt.style.color = '#22c55e'; }
+
+        btn.classList.add('granted');
+        btn.textContent = '✓ ACCESS GRANTED';
+        if (btnSec) btnSec.style.display = 'none';
+        statusEl.className = 'gate-status-msg ok';
+        statusEl.textContent = 'Camera & Microphone verified. Initializing dashboard…';
+
+        // Stop initial test tracks so camera light turns off until needed
+        stream.getTracks().forEach(t => t.stop());
+
+        sessionStorage.setItem('mark_media_authorized', 'true');
+        setTimeout(() => {
+          unlockDashboard();
+        }, 700);
+
+      } catch (err) {
+        console.warn('[MediaGate] Combined media request failed:', err);
+
+        // Try microphone-only fallback if device has no camera or user denied video
+        let micSuccess = false;
+        try {
+          const micOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          if (micBox) micBox.classList.add('active');
+          if (micSt) { micSt.textContent = '✓ Granted'; micSt.style.color = '#22c55e'; }
+          micOnlyStream.getTracks().forEach(t => t.stop());
+          micSuccess = true;
+        } catch (_) {}
+
+        if (micSuccess) {
+          if (camSt) { camSt.textContent = 'Unavailable'; camSt.style.color = '#f87171'; }
+          btn.classList.add('granted');
+          btn.textContent = '✓ MIC GRANTED (NO CAM)';
+          statusEl.className = 'gate-status-msg ok';
+          statusEl.textContent = 'Microphone active. Entering dashboard…';
+          sessionStorage.setItem('mark_media_authorized', 'true');
+          setTimeout(() => {
+            unlockDashboard();
+          }, 800);
+          return;
+        }
+
+        // Both failed or denied
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          statusEl.className = 'gate-status-msg err';
+          statusEl.textContent = 'Permission denied. Please tap the lock/settings icon in the URL bar to allow Camera & Mic.';
+        } else {
+          statusEl.className = 'gate-status-msg err';
+          statusEl.textContent = 'Media error: ' + (err.message || err.name);
+        }
+
+        btn.classList.remove('granted');
+        btn.textContent = 'RETRY PERMISSIONS';
+        _gateAction = 'request';
+        skipBtn.style.display = 'inline-block';
+      }
+    }
+
+    function unlockDashboard() {
+      if (_dashboardUnlocked) return;
+      _dashboardUnlocked = true;
+
+      const gate = document.getElementById('media-gate');
+      const shell = document.getElementById('app-shell');
+
+      if (gate) gate.classList.add('gate-hidden');
+      if (shell) shell.classList.add('app-visible');
+
+      toast('Systems Online • Dashboard Ready');
+    }
+
+    // Auto-trigger permission request on startup
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        requestMediaPermissions();
+      }, 350);
+    });
   </script>
 </body>
 

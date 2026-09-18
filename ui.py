@@ -565,10 +565,22 @@ class HudCanvas(QWidget):
         amp = self._amp_disp
 
         # 1. Background with radial hologram vignette
+        emo = getattr(self, "emotion", "")
+        if emo == "ANGRY":
+            bg_c0, bg_c1, bg_c2 = "#2d0208", "#190104", "#0d0103"
+        elif emo == "HAPPY":
+            bg_c0, bg_c1, bg_c2 = "#2d1c00", "#190f00", "#0d0800"
+        elif emo == "SAD":
+            bg_c0, bg_c1, bg_c2 = "#02102b", "#010816", "#00040d"
+        elif emo in ("SINGING", "LOVE", "EXCITED"):
+            bg_c0, bg_c1, bg_c2 = "#220330", "#12011a", "#09000d"
+        else:
+            bg_c0, bg_c1, bg_c2 = "#02121d", "#010911", C.BG
+
         bg_grad = QRadialGradient(cx, cy, fw * 0.70)
-        bg_grad.setColorAt(0.0, QColor("#02121d"))
-        bg_grad.setColorAt(0.5, QColor("#010911"))
-        bg_grad.setColorAt(1.0, qcol(C.BG))
+        bg_grad.setColorAt(0.0, QColor(bg_c0))
+        bg_grad.setColorAt(0.5, QColor(bg_c1))
+        bg_grad.setColorAt(1.0, qcol(bg_c2))
         p.fillRect(self.rect(), QBrush(bg_grad))
 
         # 2. Grid dots
@@ -2880,6 +2892,245 @@ class RemoteKeyOverlay(QWidget):
         self.closed.emit()
 
 
+# ── Full-Screen Dynamic Emotion Atmosphere & FX Overlay ─────────────────────────
+class EmotionFXOverlay(QWidget):
+    """
+    Full-Screen Ambient Emotion Aura & FX Overlay.
+    Floats over the entire window (click-through, zero interaction interference).
+    Renders:
+      - Full-screen ambient atmospheric glow and breathing vignette
+      - Pulsing perimeter alert aura (e.g. Red Alert when angry, Golden Radiance when happy)
+      - Blinking alert beacon lights across top corners/edges when angry (as requested)
+      - Shimmering floating sparkles / embers / raindrops that match the emotional mood
+    """
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setStyleSheet("background: transparent;")
+
+        self._emotion = "NORMAL"
+        self._pulse_phase = 0.0
+        self._tick = 0
+
+        # Dynamic particle sparklings system
+        # each particle: {x, y, vx, vy, size, alpha, max_alpha, life, max_life, color}
+        self._sparks = []
+        self._init_sparks(36)
+
+        # 30 FPS animation timer
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._on_tick)
+        self._timer.start(33)
+
+    def set_emotion(self, emotion: str):
+        self._emotion = (emotion or "NORMAL").upper().strip()
+        self._reset_sparks_for_emotion()
+        self.update()
+
+    def _init_sparks(self, count: int):
+        self._sparks = []
+        for _ in range(count):
+            self._sparks.append(self._make_spark())
+
+    def _make_spark(self) -> dict:
+        emo = self._emotion
+        if emo == "ANGRY":
+            color = random.choice(["#ff2244", "#ff4400", "#ff0033", "#ff7744", "#ffdd44"])
+            vy = -random.uniform(0.002, 0.007)
+            vx = random.uniform(-0.003, 0.003)
+            size = random.uniform(1.8, 4.0)
+            max_alpha = random.randint(140, 240)
+        elif emo == "HAPPY":
+            color = random.choice(["#ffaa00", "#ffd700", "#ffcc33", "#fff088", "#ff9900"])
+            vy = -random.uniform(0.001, 0.004)
+            vx = random.uniform(-0.002, 0.002)
+            size = random.uniform(1.5, 3.5)
+            max_alpha = random.randint(120, 220)
+        elif emo == "SAD":
+            color = random.choice(["#2266ff", "#3388ff", "#1144cc", "#55aaff", "#88ccff"])
+            vy = random.uniform(0.004, 0.010)  # gentle falling rain
+            vx = random.uniform(-0.001, 0.001)
+            size = random.uniform(1.2, 2.8)
+            max_alpha = random.randint(90, 180)
+        elif emo in ("SINGING", "EXCITED", "LOVE"):
+            color = random.choice(["#c426ff", "#e040fb", "#ff3388", "#00f0ff", "#ffffff"])
+            vy = random.uniform(-0.003, 0.003)
+            vx = random.uniform(-0.003, 0.003)
+            size = random.uniform(1.5, 3.8)
+            max_alpha = random.randint(130, 230)
+        else:
+            color = "#00f0ff"
+            vy = random.uniform(-0.001, 0.001)
+            vx = random.uniform(-0.001, 0.001)
+            size = random.uniform(1.0, 2.0)
+            max_alpha = 25
+
+        max_life = random.randint(40, 120)
+        return {
+            "x": random.uniform(0.02, 0.98),
+            "y": random.uniform(0.02, 0.98),
+            "vx": vx,
+            "vy": vy,
+            "size": size,
+            "alpha": random.randint(10, max_alpha),
+            "max_alpha": max_alpha,
+            "life": random.randint(0, max_life),
+            "max_life": max_life,
+            "color": color,
+        }
+
+    def _reset_sparks_for_emotion(self):
+        for s in self._sparks:
+            fresh = self._make_spark()
+            s.update(fresh)
+
+    def _on_tick(self):
+        self._tick += 1
+        self._pulse_phase += 0.075
+
+        # Update sparks
+        for s in self._sparks:
+            s["life"] += 1
+            if s["life"] >= s["max_life"]:
+                fresh = self._make_spark()
+                s.update(fresh)
+                continue
+
+            s["x"] += s["vx"]
+            s["y"] += s["vy"]
+
+            # Wrap around edges
+            if s["x"] < 0: s["x"] = 1.0
+            elif s["x"] > 1.0: s["x"] = 0.0
+            if s["y"] < 0: s["y"] = 1.0
+            elif s["y"] > 1.0: s["y"] = 0.0
+
+            # Fade in then fade out
+            half = s["max_life"] / 2.0
+            if s["life"] < half:
+                s["alpha"] = s["max_alpha"] * (s["life"] / half)
+            else:
+                s["alpha"] = s["max_alpha"] * (1.0 - (s["life"] - half) / half)
+
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        if not p.isActive():
+            return
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        if W < 20 or H < 20:
+            return
+
+        emo = self._emotion
+
+        # ── 1. FULL-SCREEN PERIMETER VIGNETTE & LIGHTING AURA ──
+        if emo == "ANGRY":
+            pulse = (math.sin(self._pulse_phase * 1.6) + 1.0) / 2.0
+            v_alpha = int(75 + pulse * 115)  # 75 to 190
+
+            # Radial edge warning glow
+            rad_grad = QRadialGradient(W / 2, H / 2, max(W, H) * 0.72)
+            rad_grad.setColorAt(0.0, QColor(0, 0, 0, 0))
+            rad_grad.setColorAt(0.60, QColor(255, 20, 45, int(v_alpha * 0.35)))
+            rad_grad.setColorAt(1.0, QColor(255, 10, 30, v_alpha))
+            p.fillRect(self.rect(), QBrush(rad_grad))
+
+            # Glowing perimeter alert border
+            bdr_alpha = int(140 + pulse * 115)
+            p.setPen(QPen(QColor(255, 30, 50, bdr_alpha), 3))
+            p.drawRect(1, 1, W - 2, H - 2)
+
+            # Tactical corner alert brackets
+            p.setPen(QPen(QColor(255, 60, 80, 240), 2))
+            arm = min(40, W // 8)
+            p.drawLine(0, 0, arm, 0); p.drawLine(0, 0, 0, arm)
+            p.drawLine(W, 0, W - arm, 0); p.drawLine(W, 0, W, arm)
+            p.drawLine(0, H, arm, H); p.drawLine(0, H, 0, H - arm)
+            p.drawLine(W, H, W - arm, H); p.drawLine(W, H, W, H - arm)
+
+            # ── 2. BLINKING RED HAZARD LIGHTS (User explicit request!) ──
+            blink_on = (int(self._pulse_phase * 2.2) % 2 == 0)
+            if blink_on:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(QColor(255, 30, 50, 210)))
+
+                # Top strobe warning beacons
+                beacon_w = 46
+                p.drawRoundedRect(QRectF(18, 5, beacon_w, 4), 2, 2)
+                p.drawRoundedRect(QRectF(W - 18 - beacon_w, 5, beacon_w, 4), 2, 2)
+                p.drawRoundedRect(QRectF(W / 2 - 35, 5, 70, 4), 2, 2)
+
+                # Bright glowing hazard LED cores
+                p.setBrush(QBrush(QColor(255, 230, 230, 250)))
+                p.drawEllipse(QPointF(24, 7), 3, 3)
+                p.drawEllipse(QPointF(W - 24, 7), 3, 3)
+                p.drawEllipse(QPointF(W / 2, 7), 3, 3)
+
+        elif emo == "HAPPY":
+            pulse = (math.sin(self._pulse_phase * 0.9) + 1.0) / 2.0
+            v_alpha = int(45 + pulse * 60)
+
+            rad_grad = QRadialGradient(W / 2, H / 2, max(W, H) * 0.72)
+            rad_grad.setColorAt(0.0, QColor(0, 0, 0, 0))
+            rad_grad.setColorAt(0.65, QColor(255, 180, 0, int(v_alpha * 0.3)))
+            rad_grad.setColorAt(1.0, QColor(255, 170, 0, v_alpha))
+            p.fillRect(self.rect(), QBrush(rad_grad))
+
+            p.setPen(QPen(QColor(255, 190, 30, int(90 + pulse * 80)), 2))
+            p.drawRect(1, 1, W - 2, H - 2)
+
+        elif emo == "SAD":
+            pulse = (math.sin(self._pulse_phase * 0.5) + 1.0) / 2.0
+            v_alpha = int(50 + pulse * 65)
+
+            rad_grad = QRadialGradient(W / 2, H / 2, max(W, H) * 0.72)
+            rad_grad.setColorAt(0.0, QColor(0, 0, 0, 0))
+            rad_grad.setColorAt(0.65, QColor(25, 75, 220, int(v_alpha * 0.35)))
+            rad_grad.setColorAt(1.0, QColor(10, 50, 190, v_alpha))
+            p.fillRect(self.rect(), QBrush(rad_grad))
+
+            p.setPen(QPen(QColor(34, 102, 255, int(80 + pulse * 60)), 1))
+            p.drawRect(1, 1, W - 2, H - 2)
+
+        elif emo in ("SINGING", "EXCITED", "LOVE"):
+            pulse = (math.sin(self._pulse_phase * 1.3) + 1.0) / 2.0
+            v_alpha = int(55 + pulse * 75)
+            c_rgb = (255, 45, 120) if emo == "LOVE" else (190, 40, 255)
+
+            rad_grad = QRadialGradient(W / 2, H / 2, max(W, H) * 0.72)
+            rad_grad.setColorAt(0.0, QColor(0, 0, 0, 0))
+            rad_grad.setColorAt(0.65, QColor(c_rgb[0], c_rgb[1], c_rgb[2], int(v_alpha * 0.35)))
+            rad_grad.setColorAt(1.0, QColor(c_rgb[0], c_rgb[1], c_rgb[2], v_alpha))
+            p.fillRect(self.rect(), QBrush(rad_grad))
+
+            p.setPen(QPen(QColor(c_rgb[0], c_rgb[1], c_rgb[2], int(100 + pulse * 100)), 2))
+            p.drawRect(1, 1, W - 2, H - 2)
+
+        # ── 3. ANIMATED DYNAMIC SPARKLES & PARTICLES ──
+        if emo != "NORMAL":
+            for s in self._sparks:
+                sa = int(s["alpha"])
+                if sa <= 0:
+                    continue
+                sx = s["x"] * W
+                sy = s["y"] * H
+                sr = s["size"]
+                scol = QColor(s["color"])
+                scol.setAlpha(min(255, sa))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(scol))
+                p.drawEllipse(QPointF(sx, sy), sr, sr)
+
+                # Secondary halo on brighter sparks
+                if sr > 2.0:
+                    scol.setAlpha(int(sa * 0.35))
+                    p.setBrush(QBrush(scol))
+                    p.drawEllipse(QPointF(sx, sy), sr * 2.2, sr * 2.2)
+
+
 class MainWindow(QMainWindow):
     _log_sig        = pyqtSignal(str)
     _state_sig      = pyqtSignal(str)
@@ -2948,7 +3199,8 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        root.addWidget(self._build_header())
+        self._header = self._build_header()
+        root.addWidget(self._header)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -3022,7 +3274,14 @@ class MainWindow(QMainWindow):
         body.addWidget(self._right_panel, stretch=0)
 
         root.addLayout(body, stretch=1)
-        root.addWidget(self._build_footer())
+        self._footer = self._build_footer()
+        root.addWidget(self._footer)
+
+        # Full-Screen Dynamic Emotion Atmosphere & FX Overlay
+        self._fx_overlay = EmotionFXOverlay(central)
+        self._fx_overlay.setGeometry(central.rect())
+        self._fx_overlay.show()
+        self._fx_overlay.raise_()
 
         # Quick-access drawer (floating overlay, built after central widget layout is done)
         self._quick_drawer = self._build_quick_drawer()
@@ -3504,6 +3763,9 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         cw = self.centralWidget()
+        if hasattr(self, '_fx_overlay') and self._fx_overlay:
+            self._fx_overlay.setGeometry(cw.rect())
+            self._fx_overlay.raise_()
         if self._overlay and self._overlay.isVisible():
             ow, oh = 460, 390
             self._overlay.setGeometry(
@@ -4659,27 +4921,102 @@ class MainWindow(QMainWindow):
     def _apply_state(self, state: str):
         self.hud.state    = state
         self.hud.speaking = (state == "SPEAKING")
+        try:
+            self._refresh_wake_btns()
+        except Exception:
+            pass
 
     def _apply_emotion(self, emotion: str):
         emo = (emotion or "").strip().upper()
+        old_pal = current_palette()
+
+        # Full-screen ambient atmospheric configurations:
+        # (accent_hex, central_bg, header_gradient, footer_bg, border_color)
+        cfg_map = {
+            "ANGRY": (
+                "#ff1e38",   # Fiery Crimson Red
+                "#1a0205",   # Brooding deep red backdrop
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2e0308, stop:0.5 #160104, stop:1 #2e0308)",
+                "#160104",
+                "#ff1e38",
+            ),
+            "HAPPY": (
+                "#ffaa00",   # Radiant Warm Gold
+                "#1c1200",   # Warm golden amber backdrop
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b1c00, stop:0.5 #140d00, stop:1 #2b1c00)",
+                "#140d00",
+                "#ffaa00",
+            ),
+            "SAD": (
+                "#2266ff",   # Deep Ocean Blue
+                "#02091c",   # Melancholy deep indigo backdrop
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #03122c, stop:0.5 #010814, stop:1 #03122c)",
+                "#010814",
+                "#2266ff",
+            ),
+            "SINGING": (
+                "#c426ff",   # Neon Violet
+                "#1c0229",   # Cosmic purple backdrop
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2c0340, stop:0.5 #14011e, stop:1 #2c0340)",
+                "#14011e",
+                "#c426ff",
+            ),
+            "EXCITED": (
+                "#00f0ff",   # High-voltage Cyan
+                "#00141f",   # Electric deep cyan backdrop
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #002838, stop:0.5 #00121a, stop:1 #002838)",
+                "#00121a",
+                "#00f0ff",
+            ),
+            "LOVE": (
+                "#ff3388",   # Rose Pink
+                "#240412",   # Romantic deep rose backdrop
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38061c, stop:0.5 #18020b, stop:1 #38061c)",
+                "#18020b",
+                "#ff3388",
+            ),
+        }
+
         if emo in ("NORMAL", "CALM", "CLEAR", "RESET", ""):
             self.hud.emotion = ""
             base_col = _read_full_config().get("ui_color") or DEFAULT_UI_COLOR
-            apply_ui_accent(base_col)
-            self._log.append_log("SYS: Mood → Normal.")
+            if apply_ui_accent(base_col):
+                retheme_all_widgets(old_pal, current_palette())
+            self.centralWidget().setStyleSheet(f"background: {C.BG};")
+            if hasattr(self, "_header") and self._header:
+                self._header.setStyleSheet(f"""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #020c15, stop:0.5 #01070d, stop:1 #020c15);
+                    border-bottom: 1px solid {C.BORDER_B};
+                """)
+            if hasattr(self, "_footer") and self._footer:
+                self._footer.setStyleSheet(f"background: #01060d; border-top: 1px solid {C.BORDER};")
+            if hasattr(self, "_fx_overlay") and self._fx_overlay:
+                self._fx_overlay.set_emotion("NORMAL")
+            self._log.append_log("SYS: Full-Screen Atmosphere → Normal Baseline.")
         else:
             self.hud.emotion = emo
-            color_map = {
-                "ANGRY": "#ff2244",    # Fiery Crimson Red
-                "HAPPY": "#ffaa00",    # Radiant Warm Gold
-                "SAD": "#2266ff",      # Deep Ocean Blue
-                "SINGING": "#bb22ff",  # Neon Violet
-            }
-            col = color_map.get(emo)
-            if col:
-                apply_ui_accent(col)
-            self._log.append_log(f"SYS: Mood shifted to {emo} ✨")
+            if emo in cfg_map:
+                col, bg_col, hdr_grad, ftr_bg, bdr_col = cfg_map[emo]
+                if apply_ui_accent(col):
+                    retheme_all_widgets(old_pal, current_palette())
+                self.centralWidget().setStyleSheet(f"background: {bg_col};")
+                if hasattr(self, "_header") and self._header:
+                    self._header.setStyleSheet(f"""
+                        background: {hdr_grad};
+                        border-bottom: 1px solid {bdr_col};
+                    """)
+                if hasattr(self, "_footer") and self._footer:
+                    self._footer.setStyleSheet(f"background: {ftr_bg}; border-top: 1px solid {bdr_col};")
+                if hasattr(self, "_fx_overlay") and self._fx_overlay:
+                    self._fx_overlay.set_emotion(emo)
+                self._log.append_log(f"SYS: Full-Screen Atmosphere shifted to {emo} ✨")
+            else:
+                self._log.append_log(f"SYS: Mood shifted to {emo} ✨")
+
         self.hud.update()
+        if hasattr(self, "_fx_overlay") and self._fx_overlay:
+            self._fx_overlay.update()
 
     def set_emotion(self, emotion: str) -> None:
         self._emotion_sig.emit(emotion)

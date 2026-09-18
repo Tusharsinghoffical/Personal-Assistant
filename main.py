@@ -69,7 +69,9 @@ from actions.background_monitor import (
 )
 from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
-    get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
+    get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,
+    get_input_device, get_output_device, get_auto_sleep_enabled, save_auto_sleep_enabled,
+    get_wake_sleep_timeout, get_start_awake, save_last_awake_state, get_last_awake_state,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
@@ -80,9 +82,8 @@ from core.wake_word            import (
     WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install,
 )
 
-# How long the assistant stays awake with no user speech before it auto-sleeps
-# again (wake-word mode only).
-WAKE_SLEEP_TIMEOUT = 120.0   # seconds (2 minutes)
+# Inactivity duration before auto-sleep (used only if auto_sleep_enabled is True)
+WAKE_SLEEP_TIMEOUT = 300.0   # seconds (5 minutes)
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -221,6 +222,18 @@ TOOL_DECLARATIONS = [
             "Call this when the user expresses intent to end the conversation, "
             "close the assistant, say goodbye, or stop Mark. "
             "The user can say this in ANY language."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        }
+    },
+    {
+        "name": "sleep_mark",
+        "description": (
+            "Puts Mark into sleep mode (mic gated, resting) until the user says 'Hey Mark' or 'Wake up'. "
+            "Call this when the user asks you to sleep: go to sleep, sleep now, take a rest, so jao, aaram karo, sleep mode on, etc. in ANY language. "
+            "Do NOT call shutdown_mark for sleep requests — shutdown closes the entire application, whereas sleep_mark keeps Mark resting in the background waiting for the wake word."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -426,10 +439,12 @@ class JarvisLive:
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
         # It is True whenever wake word is OFF, so default behaviour is unchanged.
-        self._wake_enabled     = get_wake_word_enabled()
-        self._awake            = not self._wake_enabled
+        self._wake_enabled       = get_wake_word_enabled()
+        self._auto_sleep_enabled = get_auto_sleep_enabled()
+        self._wake_sleep_timeout = get_wake_sleep_timeout()
+        # Start awake if wake word is off OR if start_awake is configured
+        self._awake              = (not self._wake_enabled) or get_start_awake()
         self._wake_detector: WakeWordDetector | None = None
-        self._wake_sleep_timeout = WAKE_SLEEP_TIMEOUT
         # UI control surface for the Wake Word settings section.
         self.ui.wake_is_ready    = wake_is_ready          # () -> bool
         self.ui.wake_get_state   = self._wake_state       # () -> dict
@@ -458,12 +473,13 @@ class JarvisLive:
         return True
 
     def _on_wake_detected(self) -> None:
-        """Called from the detector thread when 'Hey Jarvis' is heard."""
+        """Called from the detector thread when 'Hey Jarvis' or 'Hey Mark' is heard."""
         self.wake(reason="wake word")
 
     def wake(self, reason: str = "wake word") -> None:
         self._awake = True
         self._last_user_speech = time.monotonic()   # start the auto-sleep clock now
+        save_last_awake_state(True)
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
         self.ui.write_log(f"SYS: Awake — {reason}.")
@@ -477,22 +493,25 @@ class JarvisLive:
         if not self._awake:
             return
         self._awake = False
+        save_last_awake_state(False)
         self.set_speaking(False)
         self.ui.set_state("SLEEPING")
         self.ui.write_log(f"SYS: Sleeping — {reason}. Say 'Hey Mark' to wake me.")
 
     async def _run_sleep_watch(self) -> None:
-        """Auto-sleep after the configured silence window (wake-word mode only)."""
+        """Auto-sleep after the configured silence window (wake-word mode only, if auto-sleep enabled)."""
         while True:
             await asyncio.sleep(5)
-            if not self._wake_enabled or not self._awake:
+            if not self._wake_enabled or not self._awake or not self._auto_sleep_enabled:
                 continue
             with self._speaking_lock:
                 speaking = self._is_speaking
             if speaking:
+                self._last_user_speech = time.monotonic()
                 continue
+            mins = max(1, int(self._wake_sleep_timeout // 60))
             if (time.monotonic() - self._last_user_speech) > self._wake_sleep_timeout:
-                self.sleep(reason="no speech for 2 minutes")
+                self.sleep(reason=f"inactivity for {mins} minutes")
 
     # ── Wake word: UI callbacks (called from the Qt thread) ──────────────────
 
@@ -622,6 +641,7 @@ class JarvisLive:
         if self._wake_enabled and not self._awake:
             self.ui.write_log("SYS: I'm asleep — say 'Hey Mark' or tap WAKE NOW first.")
             return
+        self._last_user_speech = time.monotonic()
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
                 turns={"role": "user", "parts": [{"text": text}]},
@@ -633,6 +653,7 @@ class JarvisLive:
     def set_speaking(self, value: bool):
         with self._speaking_lock:
             self._is_speaking = value
+        self._last_user_speech = time.monotonic()
         if value:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
@@ -884,6 +905,10 @@ class JarvisLive:
                 asyncio.create_task(_do_shutdown())
                 result = "Shutting down now. Goodbye."
 
+            elif name == "sleep_mark":
+                self.sleep(reason="user voice command")
+                result = "Going to sleep now. Say 'Hey Mark' whenever you need me."
+
             elif self._action_registry.has(name):
                 # file_processor: fall back to the currently-uploaded file when none is given
                 if name == "file_processor" and not args.get("file_path") and self.ui.current_file:
@@ -916,7 +941,8 @@ class JarvisLive:
             traceback.print_exc()
             self.speak_error(name, e)
 
-        if not self.ui.muted:
+        self._last_user_speech = time.monotonic()
+        if not self.ui.muted and self._awake:
             self.ui.set_state("LISTENING")
 
         print(f"[MARK] 📤 {name} → {str(result)[:80]}")
@@ -985,6 +1011,8 @@ class JarvisLive:
                 try:
                     level = _pcm_level(indata)
                     self.ui.set_audio_level(level)
+                    if level >= 0.08:
+                        self._last_user_speech = time.monotonic()
                     if level >= 0.88:
                         self._shout_frames += 1
                         if self._shout_frames == 5:
@@ -1404,12 +1432,11 @@ class JarvisLive:
             "Output ONLY the summary text, nothing else:\n\n" + convo
         )
         try:
-            from google import genai as _genai
-            client = _genai.Client(api_key=_get_api_key())
-            resp   = await asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-flash-latest",
+            from core.action_utils import generate_content_resilient
+            resp = await asyncio.to_thread(
+                generate_content_resilient,
                 contents=prompt,
+                preferred_model="gemini-3.1-flash-lite",
             )
             summary = (resp.text or "").strip()
             if summary:
@@ -1667,13 +1694,16 @@ class JarvisLive:
                         # is the whole point, and it is invisible otherwise.
                         self.ui.write_log("SYS: Reconnected — conversation restored.")
 
-                    # Wake word: if enabled, come up ASLEEP (mic gated, silent)
-                    # until the user says "Hey Mark" or taps wake in the UI.
+                    # Wake word: ensure detector is running if enabled.
+                    # Preserve existing awake state across reconnects instead of forcing sleep!
                     if self._wake_enabled:
                         self._ensure_wake_detector()
-                        self._awake = False
-                        self.ui.set_state("SLEEPING")
-                        self.ui.write_log(f"SYS: {self._asst_name} online — sleeping. Say 'Hey Mark' to wake me.")
+                        if not self._awake:
+                            self.ui.set_state("SLEEPING")
+                            self.ui.write_log(f"SYS: {self._asst_name} online — sleeping. Say 'Hey Mark' to wake me.")
+                        else:
+                            self.ui.set_state("LISTENING")
+                            self.ui.write_log(f"SYS: {self._asst_name} online — ready.")
                     else:
                         self._awake = True
                         self.ui.set_state("LISTENING")
@@ -1790,10 +1820,10 @@ class JarvisLive:
                     asyncio.create_task(self._save_session_summary())
 
             self.set_speaking(False)
-            self.ui.set_state("SLEEPING")
-
-            if self._dashboard:
-                await self._dashboard.broadcast({"type": "status", "state": "sleeping"})
+            if not self._awake or getattr(self, "_shutdown_requested", False):
+                self.ui.set_state("SLEEPING")
+                if self._dashboard:
+                    await self._dashboard.broadcast({"type": "status", "state": "sleeping"})
 
             if getattr(self, "_shutdown_requested", False):
                 print("[MARK] Shutdown complete.")

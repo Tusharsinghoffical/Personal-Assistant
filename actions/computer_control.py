@@ -29,21 +29,13 @@ try:
 except ImportError:
     _PYPERCLIP = False
 
-def _base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
+from core.action_utils import get_base_dir, load_api_config, get_api_key
 
-
-_BASE         = _base_dir()
-_CONFIG_PATH  = _BASE / "config" / "api_keys.json"
+_BASE         = get_base_dir()
 _MEMORY_PATH  = _BASE / "memory" / "long_term.json"
 
 def _load_config() -> dict:
-    try:
-        return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return load_api_config()
 
 def _platform_os() -> str:
     return {"Windows": "windows", "Darwin": "mac", "Linux": "linux"}.get(
@@ -55,7 +47,7 @@ def _get_os() -> str:
 
 
 def _get_api_key() -> str:
-    return _load_config().get("gemini_api_key", "")
+    return get_api_key("gemini")
 
 _SAFE_SCREENSHOT_ROOTS = (
     Path.home(),

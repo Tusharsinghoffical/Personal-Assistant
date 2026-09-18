@@ -79,7 +79,7 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
 # Gemini Live prebuilt voices. Names are proper nouns — identical in every
 # language, so this list is safe to show verbatim in any locale.
 AVAILABLE_VOICES = ["Charon", "Puck", "Kore", "Fenrir", "Aoede"]
-DEFAULT_VOICE    = "Aoede"
+DEFAULT_VOICE    = "Fenrir"
 
 
 def get_voice() -> str:
@@ -119,6 +119,42 @@ def save_wake_word_enabled(enabled: bool) -> None:
             data = {}
     data["wake_word_enabled"] = bool(enabled)
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+
+
+def get_auto_sleep_enabled() -> bool:
+    """Whether Mark automatically drops into sleep mode on silence. Defaults to False so Mark stays awake once woken up."""
+    return load_api_keys().get("auto_sleep_enabled", False)
+
+
+def save_auto_sleep_enabled(enabled: bool) -> None:
+    _patch_config(auto_sleep_enabled=bool(enabled))
+
+
+def get_wake_sleep_timeout() -> float:
+    """Seconds of inactivity before auto-sleep (only active if auto_sleep_enabled is True). Defaults to 300s (5 minutes)."""
+    return float(load_api_keys().get("wake_sleep_timeout", 300.0))
+
+
+def save_wake_sleep_timeout(timeout_secs: float) -> None:
+    _patch_config(wake_sleep_timeout=float(timeout_secs))
+
+
+def get_start_awake() -> bool:
+    """Whether Mark starts awake on full restart/launch instead of immediately booting into sleep mode."""
+    return load_api_keys().get("start_awake", True)
+
+
+def save_start_awake(start_awake: bool) -> None:
+    _patch_config(start_awake=bool(start_awake))
+
+
+def get_last_awake_state() -> bool:
+    """Persisted awake state across restarts."""
+    return load_api_keys().get("last_awake_state", True)
+
+
+def save_last_awake_state(awake: bool) -> None:
+    _patch_config(last_awake_state=bool(awake))
 
 
 def get_brief_enabled() -> bool:

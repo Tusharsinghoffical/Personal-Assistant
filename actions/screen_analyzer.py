@@ -17,18 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from actions.camera_photo import capture_screenshot
+from core.action_utils import get_base_dir, get_api_key
 
 _OS = platform.system()
-
-def _get_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
-
-def _get_api_key() -> str:
-    path = _get_base_dir() / "config" / "api_keys.json"
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f).get("gemini_api_key", "")
 
 
 def get_open_windows() -> list[dict[str, Any]]:

@@ -6,40 +6,35 @@ import time
 from pathlib import Path
 
 
-def get_base_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
-
+from core.action_utils import (
+    get_base_dir,
+    get_desktop_dir,
+    get_gemini_client,
+    clean_code_fences,
+    safe_save_file,
+    safe_read_file,
+    execute_process,
+)
 
 BASE_DIR         = get_base_dir()
-API_CONFIG_PATH  = BASE_DIR / "config" / "api_keys.json"
-PROJECTS_DIR     = Path.home() / "Desktop" / "JarvisProjects"
+PROJECTS_DIR     = get_desktop_dir() / "MarkProjects"
 MAX_FIX_ATTEMPTS = 5
 MODEL_PLANNER    = "gemini-flash-latest"
 MODEL_WRITER     = "gemini-flash-latest"
 
-def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
 
-
-def _get_model(model_name: str):
-    from google import genai
-    _c = genai.Client(api_key=_get_api_key())
+def _get_model(model_name: str = MODEL_PLANNER):
+    client = get_gemini_client()
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model=model_name, contents=contents)
+            return client.models.generate_content(model=model_name, contents=contents)
 
     return _W()
 
 
 def _strip_fences(text: str) -> str:
-    text = text.strip()
-    text = re.sub(r"^```[a-zA-Z]*\r?\n?", "", text)
-    text = re.sub(r"\r?\n?```\s*$", "", text)
-    return text.strip()
+    return clean_code_fences(text)
 
 
 def _is_rate_limit(error: Exception) -> bool:

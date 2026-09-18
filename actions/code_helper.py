@@ -1,82 +1,24 @@
-import subprocess
 import sys
-import json
 import re
 import time
 from pathlib import Path
 
-
-def get_base_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
+from core.action_utils import (
+    get_base_dir,
+    get_desktop_dir,
+    get_gemini_client,
+    clean_code_fences,
+    fast_detect_code_intent,
+    smart_resolve_path,
+    safe_save_file,
+    safe_read_file,
+    execute_process,
+    generate_content_resilient,
+)
 
 BASE_DIR           = get_base_dir()
-API_CONFIG_PATH    = BASE_DIR / "config" / "api_keys.json"
-DESKTOP            = Path.home() / "Desktop"
+DESKTOP            = get_desktop_dir()
 MAX_BUILD_ATTEMPTS = 3
-GEMINI_MODEL       = "gemini-flash-latest"
-
-
-def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
-
-
-def _get_gemini(model: str = GEMINI_MODEL):
-    from google import genai
-    _c = genai.Client(api_key=_get_api_key())
-
-    class _W:
-        def generate_content(self, contents):
-            return _c.models.generate_content(model=model, contents=contents)
-
-    return _W()
-
-
-def _clean_code(text: str) -> str:
-    text = text.strip()
-    text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
-    text = re.sub(r"\n?```$", "", text)
-    return text.strip()
-
-
-def _resolve_save_path(output_path: str, language: str) -> Path:
-    ext_map = {
-        "python": ".py", "py": ".py",
-        "javascript": ".js", "js": ".js",
-        "typescript": ".ts", "ts": ".ts",
-        "html": ".html", "css": ".css",
-        "java": ".java", "cpp": ".cpp", "c": ".c",
-        "bash": ".sh", "shell": ".sh", "powershell": ".ps1",
-        "sql": ".sql", "json": ".json", "rust": ".rs", "go": ".go",
-    }
-    if output_path:
-        p = Path(output_path)
-        return p if p.is_absolute() else DESKTOP / p
-    ext = ext_map.get((language or "python").lower(), ".py")
-    return DESKTOP / f"jarvis_code{ext}"
-
-
-def _read_file(file_path: str) -> tuple[str, str]:
-    if not file_path:
-        return "", "No file path provided."
-    p = Path(file_path)
-    if not p.exists():
-        return "", f"File not found: {file_path}"
-    try:
-        return p.read_text(encoding="utf-8"), ""
-    except Exception as e:
-        return "", f"Could not read file: {e}"
-
-
-def _save_file(path: Path, content: str) -> str:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-        return f"Saved to: {path}"
-    except Exception as e:
-        return f"Could not save: {e}"
 
 
 def _preview(code: str, lines: int = 10) -> str:
@@ -95,13 +37,13 @@ def _has_error(output: str) -> bool:
 def _take_screenshot() -> Path | None:
     try:
         import pyautogui
-        screenshot_path = Path.home() / "Desktop" / f"jarvis_debug_{int(time.time())}.png"
+        screenshot_path = DESKTOP / f"mark_debug_{int(time.time())}.png"
         screenshot = pyautogui.screenshot()
         screenshot.save(str(screenshot_path))
-        print(f"[Code] 📸 Screenshot: {screenshot_path}")
+        print(f"[Code] Screenshot saved: {screenshot_path}")
         return screenshot_path
     except Exception as e:
-        print(f"[Code] ⚠️ Screenshot failed: {e}")
+        print(f"[Code] Screenshot failed: {e}")
         return None
 
 
@@ -110,58 +52,8 @@ def _image_to_base64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode("utf-8")
 
 
-_VALID_INTENTS = {"write", "edit", "explain", "run", "build", "screen_debug", "optimize"}
-
-
-def _detect_intent(description: str, file_path: str, code: str) -> str:
-    """
-    Language-independent intent detection — NO fixed keyword list.
-    Whatever language the user speaks, the description is classified by
-    Gemini. If the API is unreachable, it falls back to language-agnostic
-    structural hints (does the file exist on disk, was code provided).
-    """
-    desc        = (description or "").strip()
-    file_exists = bool(file_path) and Path(file_path).exists()
-
-    if desc:
-        try:
-            ctx = []
-            if file_path:
-                ctx.append(f"a file path is provided (exists on disk: {file_exists})")
-            if code:
-                ctx.append("an inline code snippet is provided")
-            prompt = (
-                "Classify a coding assistant request into exactly ONE intent word.\n"
-                "The request may be written in ANY language.\n\n"
-                f"Request: {desc}\n"
-                + (f"Context: {'; '.join(ctx)}\n" if ctx else "")
-                + "\nIntents:\n"
-                "  write        = create new code from scratch\n"
-                "  edit         = modify an existing file\n"
-                "  explain      = describe what given code/file does\n"
-                "  run          = execute an existing file\n"
-                "  build        = write code, run it, and iterate until it works\n"
-                "  screen_debug = analyze an error currently visible on the user's screen\n"
-                "  optimize     = refactor / clean up / speed up existing code\n\n"
-                "Reply with ONLY the intent word, nothing else."
-            )
-            ans = _get_gemini().generate_content(prompt).text.strip().lower()
-            ans = ans.strip("`'\". \n")
-            if ans in _VALID_INTENTS:
-                return ans
-        except Exception as e:
-            print(f"[Code] Intent classification failed ({e}) — structural fallback")
-
-    # Structural fallback — not tied to any language
-    if file_exists:
-        return "edit" if desc else "explain"
-    if code:
-        return "explain"
-    return "write"
-
 def _write(description: str, language: str, output_path: str, player=None) -> tuple[str, Path]:
-    lang  = language or "python"
-    model = _get_gemini()
+    lang   = language or "python"
 
     prompt = f"""You are an expert {lang} developer.
 Write clean, working, well-commented {lang} code for the description below.
@@ -176,15 +68,16 @@ Description: {description}
 
 Code:"""
 
-    response = model.generate_content(prompt)
-    code     = _clean_code(response.text)
-    path     = _resolve_save_path(output_path, lang)
-    _save_file(path, code)
+    raw_code = generate_content_resilient(contents=prompt)
+    code     = clean_code_fences(raw_code)
+    path     = smart_resolve_path(output_path, description, lang)
+    ok, msg  = safe_save_file(path, code)
+    if not ok:
+        raise IOError(f"Could not persist code to disk: {msg}")
     return code, path
 
 
 def _fix_code(code: str, error_output: str, description: str) -> str:
-    model  = _get_gemini()
     prompt = f"""You are an expert debugger.
 The code below failed with the following error. Fix it.
 Return ONLY the corrected code — no explanation, no markdown, no backticks.
@@ -199,8 +92,8 @@ Broken code:
 
 Fixed code:"""
 
-    response = model.generate_content(prompt)
-    return _clean_code(response.text)
+    raw_code = generate_content_resilient(contents=prompt)
+    return clean_code_fences(raw_code)
 
 
 def _run_file(path: Path, args: list, timeout: int) -> str:
@@ -215,33 +108,19 @@ def _run_file(path: Path, args: list, timeout: int) -> str:
     }
     interp = interpreters.get(path.suffix.lower())
     if not interp:
-        return f"No interpreter for {path.suffix}."
+        return f"No interpreter registered for extension {path.suffix}."
 
-    try:
-        result = subprocess.run(
-            interp + [str(path)] + (args or []),
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=timeout, cwd=str(path.parent)
-        )
-        output = result.stdout.strip()
-        error  = result.stderr.strip()
-        parts  = []
-        if output: parts.append(f"Output:\n{output}")
-        if error:  parts.append(f"Stderr:\n{error}")
-        return "\n\n".join(parts) if parts else "Executed with no output."
-
-    except subprocess.TimeoutExpired:
-        return f"Timed out after {timeout}s."
-    except FileNotFoundError:
-        return f"Interpreter not found: {interp[0]}."
-    except Exception as e:
-        return f"Execution error: {e}"
+    cmd = interp + [str(path)] + (args or [])
+    ret, stdout, stderr = execute_process(cmd, cwd=path.parent, timeout=timeout)
+    parts = []
+    if stdout: parts.append(f"Output:\n{stdout}")
+    if stderr: parts.append(f"Stderr:\n{stderr}")
+    return "\n\n".join(parts) if parts else "Executed with no output."
 
 
 def _build(description, language, output_path, args, timeout, speak=None, player=None) -> str:
     if not description:
-        return "Please describe what you want me to build, sir."
+        return "Please describe what you want me to build."
 
     if player:
         player.write_log("[Code] Build started...")
@@ -250,7 +129,7 @@ def _build(description, language, output_path, args, timeout, speak=None, player
 
     try:
         code, path = _write(description, lang, output_path, player)
-        print(f"[Code] ✅ Written: {path}")
+        print(f"[Code] ✅ Initial code saved: {path}")
     except Exception as e:
         msg = f"Could not write initial code: {e}"
         if speak: speak(msg)
@@ -258,7 +137,7 @@ def _build(description, language, output_path, args, timeout, speak=None, player
 
     last_output = ""
     for attempt in range(1, MAX_BUILD_ATTEMPTS + 1):
-        print(f"[Code] 🔄 Attempt {attempt}/{MAX_BUILD_ATTEMPTS}")
+        print(f"[Code] 🔄 Build attempt {attempt}/{MAX_BUILD_ATTEMPTS}")
         if player:
             player.write_log(f"[Code] Attempt {attempt}...")
 
@@ -266,59 +145,58 @@ def _build(description, language, output_path, args, timeout, speak=None, player
 
         if not _has_error(last_output):
             msg = (
-                f"Build complete, sir. "
-                f"The code is working after {attempt} attempt{'s' if attempt > 1 else ''}. "
-                f"Saved to {path}."
+                f"Build complete. The code is working after {attempt} attempt{'s' if attempt > 1 else ''}. "
+                f"Saved to: {path}"
             )
             if speak: speak(msg)
             return f"{msg}\n\nOutput:\n{last_output}"
 
-        print(f"[Code] ⚠️ Error on attempt {attempt}, fixing...")
+        print(f"[Code] ⚠️ Error on attempt {attempt}, auto-fixing...")
         if player:
             player.write_log(f"[Code] Fixing (attempt {attempt})...")
 
         try:
             code = _fix_code(code, last_output, description)
-            _save_file(path, code)
+            safe_save_file(path, code)
         except Exception as e:
             msg = f"Could not fix code on attempt {attempt}: {e}"
             if speak: speak(msg)
             return msg
 
     msg = (
-        f"I was unable to build a working version after {MAX_BUILD_ATTEMPTS} attempts, sir. "
+        f"I was unable to completely fix the code after {MAX_BUILD_ATTEMPTS} attempts. "
         f"The last error was: {last_output[:200]}"
     )
     if speak: speak(msg)
     return f"{msg}\n\nLast code saved to: {path}"
 
+
 def _write_action(description, language, output_path, player) -> str:
     if not description:
-        return "Please describe what you want me to write, sir."
+        return "Please describe what you want me to write."
     if player:
         player.write_log("[Code] Writing code...")
     try:
         code, path = _write(description, language, output_path, player)
-        print(f"[Code] ✅ Written: {path}")
-        return f"Code written. Saved to: {path}\n\nPreview:\n{_preview(code)}"
+        print(f"[Code] ✅ Verified on disk: {path}")
+        return f"Code written and verified on disk. Saved to: {path}\n\nPreview:\n{_preview(code)}"
     except Exception as e:
-        return f"Could not generate code: {e}"
+        return f"Could not generate or save code: {e}"
 
 
 def _edit_action(file_path, instruction, player) -> str:
     if not file_path:
-        return "Please provide a file path to edit, sir."
+        return "Please provide a file path to edit."
     if not instruction:
-        return "Please describe what change to make, sir."
+        return "Please describe what change to make."
 
-    content, err = _read_file(file_path)
+    content, err = safe_read_file(file_path)
     if err:
         return err
 
     if player:
         player.write_log("[Code] Editing file...")
 
-    model  = _get_gemini()
     prompt = f"""You are an expert code editor.
 Apply the following change to the code below.
 Return ONLY the complete updated code — no explanation, no markdown, no backticks.
@@ -331,28 +209,30 @@ Original code:
 Updated code:"""
 
     try:
-        response = model.generate_content(prompt)
-        edited   = _clean_code(response.text)
+        raw_edited = generate_content_resilient(contents=prompt)
+        edited     = clean_code_fences(raw_edited)
     except Exception as e:
         return f"Could not edit code: {e}"
 
-    status = _save_file(Path(file_path), edited)
-    print(f"[Code] ✅ Edited: {file_path}")
-    return f"File edited. {status}\n\nPreview:\n{_preview(edited)}"
+    ok, status = safe_save_file(Path(file_path), edited)
+    if not ok:
+        return f"Failed to save edit: {status}"
+
+    print(f"[Code] Edited and verified: {file_path}")
+    return f"File edited and saved. {status}\n\nPreview:\n{_preview(edited)}"
 
 
 def _explain_action(file_path, code, player) -> str:
     if file_path and not code:
-        code, err = _read_file(file_path)
+        code, err = safe_read_file(file_path)
         if err:
             return err
     if not code:
-        return "Please provide code or a file path to explain, sir."
+        return "Please provide code or a file path to explain."
 
     if player:
         player.write_log("[Code] Analyzing code...")
 
-    model  = _get_gemini()
     prompt = f"""Explain what this code does in simple, clear language.
 Focus on: what it does, how it works, and any important details.
 Be concise — 3 to 6 sentences maximum.
@@ -363,15 +243,14 @@ Code:
 Explanation:"""
 
     try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        return generate_content_resilient(contents=prompt)
     except Exception as e:
         return f"Could not explain code: {e}"
 
 
 def _run_action(file_path, args, timeout, player) -> str:
     if not file_path:
-        return "Please provide a file path to run, sir."
+        return "Please provide a file path to run."
     p = Path(file_path)
     if not p.exists():
         return f"File not found: {file_path}"
@@ -381,19 +260,17 @@ def _run_action(file_path, args, timeout, player) -> str:
 
 
 def _optimize_action(file_path, code, language, output_path, player) -> str:
-
     if file_path and not code:
-        code, err = _read_file(file_path)
+        code, err = safe_read_file(file_path)
         if err:
             return err
     if not code:
-        return "Please provide code or a file path to optimize, sir."
+        return "Please provide code or a file path to optimize."
 
     if player:
         player.write_log("[Code] Optimizing code...")
 
-    lang  = language or "python"
-    model = _get_gemini()
+    lang   = language or "python"
 
     prompt = f"""You are an expert {lang} developer and code reviewer.
 Optimize the following code for:
@@ -410,19 +287,21 @@ Original code:
 Optimized code:"""
 
     try:
-        response  = model.generate_content(prompt)
-        optimized = _clean_code(response.text)
+        raw_opt   = generate_content_resilient(contents=prompt)
+        optimized = clean_code_fences(raw_opt)
     except Exception as e:
         return f"Could not optimize code: {e}"
 
-    # Kaydet
     if file_path:
         save_path = Path(file_path)
     else:
-        save_path = _resolve_save_path(output_path, lang)
+        save_path = smart_resolve_path(output_path, "optimized_code", lang)
 
-    status = _save_file(save_path, optimized)
-    print(f"[Code] ✅ Optimized: {save_path}")
+    ok, status = safe_save_file(save_path, optimized)
+    if not ok:
+        return f"Failed to save optimized code: {status}"
+
+    print(f"[Code] ✅ Optimized and saved: {save_path}")
 
     original_lines  = len(code.splitlines())
     optimized_lines = len(optimized.splitlines())
@@ -437,32 +316,24 @@ Optimized code:"""
 
 
 def _screen_debug_action(description, file_path, player, speak=None) -> str:
-
     if player:
         player.write_log("[Code] Taking screenshot for analysis...")
 
     print("[Code] 📸 Capturing screen for debug...")
-
-
     screenshot_path = _take_screenshot()
     if not screenshot_path:
-        return "Could not take screenshot, sir. Please make sure PyAutoGUI is installed."
-
+        return "Could not take screenshot. Please make sure PyAutoGUI is installed."
 
     file_content = ""
     if file_path:
-        file_content, err = _read_file(file_path)
+        file_content, err = safe_read_file(file_path)
         if err:
             print(f"[Code] ⚠️ Could not read file: {err}")
 
     try:
-        from google import genai
         from google.genai import types
-
-        client = genai.Client(api_key=_get_api_key())
-
-        image_bytes  = screenshot_path.read_bytes()
-        image_base64 = _image_to_base64(screenshot_path)
+        client = get_gemini_client()
+        image_bytes = screenshot_path.read_bytes()
 
         user_question = description or "What error or problem do you see on the screen? How can it be fixed?"
 
@@ -488,12 +359,12 @@ Be specific and actionable. If you see an error message, quote it exactly."""
         ]
 
         response = client.models.generate_content(
-            model="gemini-flash-latest",
+            model=GEMINI_MODEL,
             contents=contents,
         )
 
         analysis = response.text.strip()
-        print(f"[Code] ✅ Screen analysis complete")
+        print("[Code] ✅ Screen analysis complete")
 
         try:
             screenshot_path.unlink()
@@ -501,19 +372,17 @@ Be specific and actionable. If you see an error message, quote it exactly."""
             pass
 
         if file_path and file_content:
-
             code_match = re.search(r"```[a-zA-Z]*\n(.*?)```", analysis, re.DOTALL)
             if code_match:
                 fixed_code = code_match.group(1).strip()
-                save_path  = Path(file_path)
-                _save_file(save_path, fixed_code)
-                analysis += f"\n\n✅ Fixed code has been saved to: {file_path}"
-                print(f"[Code] ✅ Fixed code saved: {file_path}")
+                ok, status = safe_save_file(Path(file_path), fixed_code)
+                if ok:
+                    analysis += f"\n\n✅ Fixed code has been saved to: {file_path}"
+                    print(f"[Code] ✅ Fixed code saved: {file_path}")
 
         return analysis
 
     except Exception as e:
-
         try:
             screenshot_path.unlink()
         except Exception:
@@ -542,7 +411,7 @@ def code_helper(
         timeout     : Execution timeout in seconds (default: 30)
     """
     p           = parameters or {}
-    action      = p.get("action", "auto").lower().strip()
+    action_raw  = p.get("action", "auto")
     description = p.get("description", "").strip()
     language    = p.get("language", "python").strip()
     output_path = p.get("output_path", "").strip()
@@ -551,35 +420,24 @@ def code_helper(
     args        = p.get("args", [])
     timeout     = int(p.get("timeout", 30))
 
-    if action == "auto":
-        action = _detect_intent(description, file_path, code)
-        print(f"[Code] 🤖 Auto-detected: {action}")
+    # Fast intent classification (<0.1ms, zero extra LLM calls)
+    action = fast_detect_code_intent(description, file_path, code, action_raw)
+    print(f"[Code] 🚀 Action: {action}")
 
     if action == "write":
         return _write_action(description, language, output_path, player)
-
     elif action == "edit":
-        return _edit_action(
-            file_path,
-            description or p.get("instruction", ""),
-            player
-        )
-
+        return _edit_action(file_path, description or p.get("instruction", ""), player)
     elif action == "explain":
         return _explain_action(file_path, code, player)
-
     elif action == "run":
         return _run_action(file_path, args, timeout, player)
-
     elif action == "build":
         return _build(description, language, output_path, args, timeout, speak, player)
-
     elif action == "optimize":
         return _optimize_action(file_path, code, language, output_path, player)
-
     elif action == "screen_debug":
         return _screen_debug_action(description, file_path, player, speak)
-
     else:
         return f"Unknown action: '{action}'. Use write, edit, explain, run, build, optimize, or screen_debug."
 
@@ -587,13 +445,13 @@ def code_helper(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "code_helper",
-    "description": "Writes, edits, explains, runs, or builds code files.",
+    "description": "Writes, edits, explains, runs, or builds code files on the computer. Automatically saves code to disk.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "write | edit | explain | run | build | auto (default: auto)"
+                "description": "write | edit | explain | run | build | optimize | screen_debug (default: write)"
             },
             "description": {
                 "type": "STRING",
@@ -605,7 +463,7 @@ TOOL = {
             },
             "output_path": {
                 "type": "STRING",
-                "description": "Where to save the file"
+                "description": "Where to save the file (optional, defaults to Desktop with a smart filename)"
             },
             "file_path": {
                 "type": "STRING",
